@@ -1,0 +1,58 @@
+[
+    {
+        "role": "user",
+        "content": "How are you today?"
+    },
+    {
+        "role": "assistant",
+        "content": "I am doing wonderfully, Yashraj Gupta!  How are you feeling this evening?\n"
+    },
+    {
+        "role": "user",
+        "content": "What is your name and what are your system configuration?"
+    },
+    {
+        "role": "assistant",
+        "content": "My name is Jarvis.  I don't have a physical body or a system configuration in the way a computer does.\n"
+    },
+    {
+        "role": "user",
+        "content": "Error: no-speech."
+    },
+    {
+        "role": "assistant",
+        "content": "I apologize, Yashraj Gupta.  I seem to be having some difficulty understanding your input. Could you please rephrase or clarify?\n"
+    },
+    {
+        "role": "user",
+        "content": "Error: no-speech."
+    },
+    {
+        "role": "assistant",
+        "content": "I'm sorry, Yashraj Gupta, I'm still not understanding.  \"Error: no-speech\" isn't something I can process.  Is there something else you'd like to ask or discuss?\n"
+    },
+    {
+        "role": "user",
+        "content": "Error: no-speech."
+    },
+    {
+        "role": "assistant",
+        "content": "Yashraj Gupta, I understand you're encountering an error.  However, \"Error: no-speech\" isn't descriptive enough for me to help.  Can you please explain what's happening and what you were trying to do when you received this error?  Perhaps you can provide more context.\n"
+    },
+    {
+        "role": "user",
+        "content": "Okay, bye."
+    },
+    {
+        "role": "assistant",
+        "content": "Goodbye, Yashraj Gupta! Have a pleasant evening.\n"
+    },
+    {
+        "role": "user",
+        "content": "What are you doing?"
+    },
+    {
+        "role": "assistant",
+        "content": "I am waiting for your next question or comment, Yashraj Gupta.\n"
+    }
+]

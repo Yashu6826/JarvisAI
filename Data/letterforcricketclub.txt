@@ -1,0 +1,11 @@
+Several options exist for a letter to a cricket club, depending on its purpose.  Please tell me what you want the letter to achieve.  For example, are you:
+
+* **Applying for membership?**  I'll need to know your age, experience level, and any relevant information.
+* **Sponsoring the club?** I'll need details about your sponsorship offer.
+* **Requesting information?**  I'll need to know what information you're seeking (e.g., fixture list, membership fees, training schedules).
+* **Complaining about something?** I'll need details about the issue.
+* **Writing a thank you note?** I'll need to know who you're thanking and why.
+* **Something else entirely?** Please describe the purpose.
+
+
+Once I have this information, I can write a suitable letter for you.
