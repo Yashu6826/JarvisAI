@@ -1,4 +1,5 @@
-✅ Features
+ ### Features
+ 
 ✅ Voice/text input
 
 ✅ Realtime chatbot
@@ -15,7 +16,7 @@
 
 ✅ Keyboard controls
 
-🛠️ Installation & Usage Instructions
+### 🛠️ Installation & Usage Instructions
 
 
 git clone https://github.com/Yashu6826/JarvisAI.git
