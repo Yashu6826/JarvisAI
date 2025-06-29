@@ -16,10 +16,12 @@
 ✅ Keyboard controls
 
 🛠️ Installation & Usage Instructions
-bash
-Copy
-Edit
+
+
 git clone https://github.com/Yashu6826/JarvisAI.git
+
 cd JarvisAI
+
 pip install -r requirements.txt
-python main.py
+
+python Main.py
