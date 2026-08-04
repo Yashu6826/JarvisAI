@@ -1,79 +1,83 @@
-import pygame
+import logging
 import random
-import asyncio
-import edge_tts
-import os
-from dotenv import dotenv_values
 
-AssistantVoice = "en-CA-LiamNeural"
+from Backend.LLMProvider import get_config
 
-async def TextToAudioFile(text) -> None:
-    file_path = r"Data\speech.mp3"
+logger = logging.getLogger(__name__)
 
-    if os.path.exists(file_path):
-        os.remove(file_path)
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
 
-    communicate = edge_tts.Communicate(text,AssistantVoice,pitch='+5Hz',rate='+13%')
-    await communicate.save(r'Data\speech.mp3')
-
-def TTS(Text,func=lambda r=None:True):
-    while True:
-        try:
-            asyncio.run(TextToAudioFile(Text))
-            pygame.mixer.init()
-            pygame.mixer.music.load(r"Data\speech.mp3")
-            pygame.mixer.music.play()
-
-            while pygame.mixer.music.get_busy():
-                if func() == False:
-                    break
-                pygame.time.Clock().tick(10)
-
-            return True
-        
-        except Exception as e:
-            print(f"Error in TTS: {e}")
-
-        finally:
-            try:
-                func(False)
-                pygame.mixer.music.stop()
-                pygame.mixer.quit()
-
-            except Exception as e:
-                print(f"Error in finally block: {e}")
+TTS_RATE = int(get_config("LOCAL_TTS_RATE", "185"))
+TTS_VOLUME = float(get_config("LOCAL_TTS_VOLUME", "1.0"))
+FEMALE_VOICE_HINTS = [
+    hint.strip().lower()
+    for hint in get_config(
+        "LOCAL_FEMALE_VOICE_HINTS", "zira,hazel,heera,female"
+    ).split(",")
+    if hint.strip()
+]
 
 
-def TextToSpeech(Text,func=lambda r=None: True):
-    Data = str(Text).split(".")
+def _set_preferred_voice(engine, voice_preference: str) -> None:
+    if voice_preference != "female":
+        return
+    for voice in engine.getProperty("voices"):
+        description = f"{voice.name} {voice.id}".lower()
+        if any(hint in description for hint in FEMALE_VOICE_HINTS):
+            engine.setProperty("voice", voice.id)
+            return
+    logger.warning("No preferred female Windows voice was found; using the default voice.")
+
+
+def TTS(
+    text: str,
+    func=lambda value=None: True,
+    voice_preference: str = "",
+) -> bool:
+    if pyttsx3 is None:
+        logger.error("Local text-to-speech is unavailable. Install pyttsx3.")
+        return False
+    if func() is False:
+        return False
+
+    engine = None
+    try:
+        engine = pyttsx3.init()
+        engine.setProperty("rate", TTS_RATE)
+        engine.setProperty("volume", max(0.0, min(TTS_VOLUME, 1.0)))
+        _set_preferred_voice(engine, voice_preference)
+        engine.say(text)
+        engine.runAndWait()
+        return True
+    except Exception as exc:
+        logger.error("Local text-to-speech failed: %s", exc)
+        return False
+    finally:
+        if engine is not None:
+            engine.stop()
+        func(False)
+
+
+def TextToSpeech(text: str, func=lambda value=None: True) -> bool:
+    sentences = str(text).split(".")
     responses = [
-        "The rest of the result has been printed to the chat screen, kindly check it out sir.",
-        "The rest of the text is now on the chat screen, sir, please check it.",
-        "You can see the rest of the text on the chat screen, sir.",
-        "The remaining part of the text is now on the chat screen, sir.",
-        "Sir, you'll find more text on the chat screen for you to see.",
-        "The rest of the answer is now on the chat screen, sir.",
-        "Sir, please look at the chat screen, the rest of the answer is there.",
-        "You'll find the complete answer on the chat screen, sir.",
-        "The next part of the text is on the chat screen, sir.",
-        "Sir, please check the chat screen for more information.",
-        "There's more text on the chat screen for you, sir.",
-        "Sir, take a look at the chat screen for additional text.",
-        "You'll find more to read on the chat screen, sir.",
-        "Sir, check the chat screen for the rest of the text.",
-        "The chat screen has the rest of the text, sir.",
-        "There's more to see on the chat screen, sir, please look.",
-        "Sir, the chat screen holds the continuation of the text.",
-        "You'll find the complete answer on the chat screen, kindly check it out sir.",
-        "Please review the chat screen for the rest of the text, sir.",
-        "Sir, look at the chat screen for the complete answer."
+        "The rest of the answer is on the chat screen.",
+        "Please check the chat screen for the full answer.",
+        "The complete response is visible in the chat screen.",
     ]
-    if len(Data)>4 and len(Text)>= 250:
-        TTS(" ".join(Text.split(".")[0:2])+". " + random.choice(responses),func)
+    if len(sentences) > 4 and len(text) >= 250:
+        spoken_text = ". ".join(sentences[:2]).strip() + ". " + random.choice(responses)
+        return TTS(spoken_text, func)
+    return TTS(str(text), func)
 
-    else:
-        TTS(Text,func)
+
+def ThinkingToSpeech(summary: str, func=lambda value=None: True) -> bool:
+    return TTS(summary, func, voice_preference="female")
+
 
 if __name__ == "__main__":
     while True:
-        TextToSpeech(input("Enter the text: "))
+        TextToSpeech(input("Enter text: "))

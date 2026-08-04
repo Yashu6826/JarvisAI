@@ -1,3 +1,31 @@
+"""Compatibility launcher for the NEXA web application.
+
+The former desktop GUI implementation is retained below for reference, but the
+supported application entrypoint is now the React/FastAPI NEXA interface.
+"""
+
+if __name__ == "__main__":
+    import os
+    import sys
+    from pathlib import Path
+
+    project_python = Path(__file__).resolve().parent / ".venv" / "Scripts" / "python.exe"
+    if (
+        project_python.exists()
+        and os.environ.get("NEXA_PROJECT_PYTHON") != "1"
+        and Path(sys.executable).resolve().as_posix().lower()
+        != project_python.resolve().as_posix().lower()
+    ):
+        os.environ["NEXA_PROJECT_PYTHON"] = "1"
+        os.execv(str(project_python), [str(project_python), *sys.argv])
+
+    import uvicorn
+
+    from WebApp import app as nexa_app
+
+    uvicorn.run(nexa_app, host="127.0.0.1", port=8000)
+    raise SystemExit
+
 from Frontend.GUI import (
     GraphicalUserInterface,
     SetAssistantStatus,
@@ -13,8 +41,8 @@ from Backend.Model import FirstLayerDMM
 from Backend.RealtimeSearchEngine import RealtimeSearchEngine
 from Backend.Automation import Automation
 from Backend.SpeechToText import SpeechRecognition
-from Backend.Chatbot import ChatBot
-from Backend.TextToSpeech import TextToSpeech
+from Backend.Chatbot import ChatBot, ChatBotWithPlan
+from Backend.TextToSpeech import TextToSpeech, ThinkingToSpeech
 from asyncio import run
 from time import sleep
 import subprocess
@@ -34,10 +62,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 Username = "yashraj"
-Assistantname = "Jarvis"
+Assistantname = "NEXA"
 DefaultMessage = f'''{Username}: Hello {Assistantname}, How are you?
 {Assistantname}: Welcome {Username} sir. How are you today. How may I help you.?'''
-Functions = ["open","close","play","system","content","google search","youtube search"]
+Functions = ["open", "close", "system", "content"]
 subprocess_list=[]
 
 def ShowDefaultChatIfNoChats():
@@ -104,10 +132,13 @@ def ChatLogIntegration():
     json_data = ReadChatLogJson()
     formatted_chatlog = ""
     for entry in json_data:
-        message = entry["parts"][0] if entry.get("parts") else ""
-        if entry["role"] == "user":
+        message = entry.get("content")
+        if message is None and entry.get("parts"):
+            message = entry["parts"][0]
+        message = message or ""
+        if entry.get("role") == "user":
             formatted_chatlog += f"User: {message}\n"
-        elif entry["role"] == "assistant":
+        elif entry.get("role") == "assistant":
             formatted_chatlog += f"Assistant: {message}\n"
     formatted_chatlog = formatted_chatlog.replace("User", Username + " ")
     formatted_chatlog = formatted_chatlog.replace("Assistant", Assistantname + " ")
@@ -174,7 +205,6 @@ def InitialExecution():
 InitialExecution()
 
 def MainExecution():
-    TaskExection = False
     ImageExecution = False
     ImageGenerationQuery = ""
 
@@ -199,14 +229,16 @@ def MainExecution():
         )
 
         for queries in Decision:
-            if "generate " in queries:
+            if queries.startswith("generate image "):
                 ImageGenerationQuery = str(queries)
                 ImageExecution = True
 
-        
-            if TaskExection == False:
-                if any(queries.startswith(func) for func in Functions):
-                    run(Automation(list(Decision)))
+        local_commands = [
+            command for command in Decision
+            if any(command.startswith(function) for function in Functions)
+        ]
+        if local_commands:
+            run(Automation(local_commands))
                     
 
         if ImageExecution == True:
@@ -219,22 +251,8 @@ def MainExecution():
             try:
                 image_gen_path = os.path.abspath(os.path.join("Backend", "ImageGeneration.py"))
                 logging.info(f"Starting subprocess: {sys.executable} {image_gen_path}")
-                p1 = subprocess.Popen(
-                    [sys.executable, image_gen_path],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    shell=False
-                )
+                p1 = subprocess.Popen([sys.executable, image_gen_path], shell=False)
                 subprocess_list.append(p1)
-                stdout, stderr = p1.communicate(timeout=30)
-                if p1.returncode != 0:
-                    logging.error(f"ImageGeneration.py failed with error: {stderr}")
-                else:
-                    logging.info(f"ImageGeneration.py output: {stdout}")
-            except subprocess.TimeoutExpired:
-                logging.error("ImageGeneration.py timed out")
-                p1.terminate()
             except Exception as e:
                 logging.error(f"Error starting ImageGeneration.py: {e}")
 
@@ -250,7 +268,10 @@ def MainExecution():
                 if "general" in Queries:
                     SetAssistantStatus("Thinking... ")
                     QueryFinal = Queries.replace("general ", "")
-                    Answer = ChatBot(QueryModifier(QueryFinal))
+                    Answer, AnswerPlan = ChatBotWithPlan(QueryModifier(QueryFinal))
+                    if AnswerPlan:
+                        SetAssistantStatus("Preparing answer... ")
+                        ThinkingToSpeech(AnswerPlan)
                     ShowTextToScreen(f"{Assistantname}: {Answer}")
                     SetAssistantStatus("Answering... ")
                     TextToSpeech(Answer)

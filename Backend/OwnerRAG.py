@@ -1,0 +1,611 @@
+"""Embedding-based RAG over the owner's resume."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import math
+import re
+from pathlib import Path
+from typing import Any
+
+from Backend.LLMProvider import (
+    EMBEDDING_MODEL,
+    EmbeddingUnavailable,
+    embed_texts,
+    generate_text,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+RESUME_PATH = ROOT / "Resume_Yashraj.pdf"
+INDEX_PATH = ROOT / "Data" / "OwnerRAG" / "index.json"
+CHUNK_MAX_CHARS = 900
+CHUNK_OVERLAP_WORDS = 35
+DEFAULT_TOP_K = 4
+INDEX_VERSION = 3
+
+
+class OwnerRAGError(RuntimeError):
+    pass
+
+
+def is_owner_question(query: str) -> bool:
+    """Detect questions that should be answered from the owner's resume."""
+    normalized = " ".join(query.lower().split())
+    owner_markers = (
+        "your owner",
+        "your creator",
+        "your developer",
+        "who made you",
+        "who built you",
+        "who created you",
+        "who developed you",
+        "creator of you",
+        "owner of you",
+        "made you",
+        "built you",
+        "created you",
+    )
+    profile_markers = (
+        "owner profile",
+        "owner resume",
+        "owner projects",
+        "owner skills",
+        "owner education",
+        "owner experience",
+        "creator profile",
+        "creator resume",
+        "resume of your owner",
+        "about your owner",
+        "about your creator",
+    )
+    return any(marker in normalized for marker in owner_markers + profile_markers)
+
+
+def is_creator_identity_question(query: str) -> bool:
+    """Detect questions specifically asking who created the assistant."""
+    normalized = " ".join(query.lower().split())
+    detail_markers = (
+        "project",
+        "projects",
+        "skill",
+        "skills",
+        "education",
+        "experience",
+        "work",
+        "worked",
+        "done",
+        "built",
+        "developed",
+    )
+    if any(marker in normalized for marker in detail_markers):
+        return False
+    creator_markers = (
+        "who made you",
+        "who built you",
+        "who created you",
+        "who developed you",
+        "creator of you",
+        "created you",
+        "made you",
+        "built you",
+        "your creator",
+    )
+    return any(marker in normalized for marker in creator_markers)
+
+
+def is_project_question(query: str) -> bool:
+    normalized = " ".join(query.lower().split())
+    return bool(re.search(r"\b(?:project|projects)\b", normalized))
+
+
+def _query_sections(query: str) -> set[str]:
+    """Map natural owner questions to resume sections for hybrid retrieval."""
+    normalized = " ".join(query.lower().split())
+    sections: set[str] = set()
+    all_sections = {"Profile", "Education", "Skills", "Experience", "Projects"}
+
+    broad_markers = (
+        "everything",
+        "all information",
+        "all info",
+        "full details",
+        "complete details",
+        "complete profile",
+        "entire resume",
+        "resume",
+    )
+    if any(marker in normalized for marker in broad_markers):
+        return set(all_sections)
+
+    section_markers = {
+        "Profile": (
+            "profile",
+            "summary",
+            "about",
+            "who is",
+            "contact",
+            "email",
+            "mobile",
+            "phone",
+            "linkedin",
+            "github",
+            "leetcode",
+            "portfolio",
+        ),
+        "Education": (
+            "education",
+            "study",
+            "studied",
+            "studies",
+            "college",
+            "institute",
+            "university",
+            "school",
+            "degree",
+            "bachelor",
+            "btech",
+            "gpa",
+            "percentage",
+            "class 12",
+            "12th",
+        ),
+        "Skills": (
+            "skill",
+            "skills",
+            "tech stack",
+            "technology",
+            "technologies",
+            "language",
+            "languages",
+            "backend",
+            "frontend",
+            "database",
+            "cloud",
+            "devops",
+            "ai tools",
+        ),
+        "Experience": (
+            "experience",
+            "work",
+            "worked",
+            "job",
+            "role",
+            "company",
+            "maersk",
+            "internship",
+            "fulltime",
+            "associate",
+            "aiml",
+        ),
+        "Projects": (
+            "project",
+            "projects",
+            "built",
+            "developed",
+            "done",
+            "jarvis-ai",
+            "blog-ai",
+            "airbnb",
+        ),
+    }
+
+    for section, markers in section_markers.items():
+        if any(marker in normalized for marker in markers):
+            sections.add(section)
+    return sections
+
+
+def _slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug[:48] or "chunk"
+
+
+def _clean_text(text: str) -> str:
+    text = text.replace("\x00", " ")
+    text = text.replace("’", "'").replace("“", '"').replace("”", '"')
+    text = text.replace("–", "-").replace("—", "-")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _extract_pdf_pages(pdf_path: Path = RESUME_PATH) -> list[dict[str, Any]]:
+    if not pdf_path.exists():
+        raise OwnerRAGError(f"Resume PDF was not found at {pdf_path}.")
+
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        raise OwnerRAGError(
+            "Install pypdf first: python -m pip install -r Requirements.txt"
+        ) from exc
+
+    reader = PdfReader(str(pdf_path))
+    pages: list[dict[str, Any]] = []
+    for page_number, page in enumerate(reader.pages, start=1):
+        text = _clean_text(page.extract_text() or "")
+        if text:
+            pages.append({"page": page_number, "text": text})
+
+    if not pages:
+        raise OwnerRAGError("No extractable text was found in the resume PDF.")
+    return pages
+
+
+def _chunk_page(page_number: int, text: str) -> list[dict[str, Any]]:
+    words = text.split()
+    chunks: list[dict[str, Any]] = []
+    start = 0
+
+    while start < len(words):
+        end = start
+        char_count = 0
+        while end < len(words):
+            next_word = words[end]
+            next_count = char_count + len(next_word) + (1 if char_count else 0)
+            if next_count > CHUNK_MAX_CHARS and end > start:
+                break
+            char_count = next_count
+            end += 1
+
+        chunk_text = " ".join(words[start:end]).strip()
+        if chunk_text:
+            chunks.append({
+                "id": f"resume-p{page_number}-c{len(chunks) + 1}",
+                "page": page_number,
+                "section": "General",
+                "title": f"Page {page_number} chunk {len(chunks) + 1}",
+                "text": chunk_text,
+            })
+
+        if end >= len(words):
+            break
+        start = max(start + 1, end - CHUNK_OVERLAP_WORDS)
+
+    return chunks
+
+
+def _section_between(text: str, start_heading: str, end_headings: tuple[str, ...]) -> str:
+    start_match = re.search(rf"(?m)^{re.escape(start_heading)}\s*$", text)
+    if not start_match:
+        return ""
+    start = start_match.end()
+    end = len(text)
+    for heading in end_headings:
+        end_match = re.search(rf"(?m)^{re.escape(heading)}\s*$", text[start:])
+        if end_match:
+            end = min(end, start + end_match.start())
+    return _clean_text(text[start:end])
+
+
+def _named_chunk(page_number: int, section: str, title: str, text: str) -> dict[str, Any]:
+    return {
+        "id": f"resume-p{page_number}-{_slug(section)}-{_slug(title)}",
+        "page": page_number,
+        "section": section,
+        "title": title,
+        "text": _clean_text(text),
+    }
+
+
+def _project_chunks(page_number: int, text: str) -> list[dict[str, Any]]:
+    projects_text = _section_between(text, "Projects", ())
+    if not projects_text:
+        return []
+
+    lines = [line.strip() for line in projects_text.splitlines() if line.strip()]
+    heading_indexes = [
+        index for index, line in enumerate(lines)
+        if "github" in line.lower() or "live-link" in line.lower()
+    ]
+    chunks: list[dict[str, Any]] = []
+    for position, start in enumerate(heading_indexes):
+        end = heading_indexes[position + 1] if position + 1 < len(heading_indexes) else len(lines)
+        title = re.sub(r"\s*(?:Github|Live-Link|\|)+.*$", "", lines[start], flags=re.I).strip()
+        title = title or lines[start]
+        project_text = "\n".join(lines[start:end])
+        chunks.append(_named_chunk(page_number, "Projects", title, project_text))
+    return chunks
+
+
+def _structured_page_chunks(page_number: int, text: str) -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+    profile = _clean_text(text.split("Education", 1)[0])
+    if profile:
+        chunks.append(_named_chunk(page_number, "Profile", "Owner identity and summary", profile))
+
+    section_boundaries = {
+        "Education": ("Skills", "Experience", "Projects"),
+        "Skills": ("Experience", "Projects"),
+        "Experience": ("Projects",),
+    }
+    for section, end_headings in section_boundaries.items():
+        section_text = _section_between(text, section, end_headings)
+        if section_text:
+            for chunk in _chunk_page(page_number, section_text):
+                chunk["section"] = section
+                chunk["title"] = section
+                chunk["id"] = f"resume-p{page_number}-{_slug(section)}-{len(chunks) + 1}"
+                chunks.append(chunk)
+
+    chunks.extend(_project_chunks(page_number, text))
+    return chunks or _chunk_page(page_number, text)
+
+
+def _source_mtime(pdf_path: Path = RESUME_PATH) -> float:
+    return pdf_path.stat().st_mtime
+
+
+def _index_is_current(index: dict[str, Any], pdf_path: Path = RESUME_PATH) -> bool:
+    return (
+        index.get("version") == INDEX_VERSION
+        and index.get("source_path") == str(pdf_path)
+        and index.get("source_mtime") == _source_mtime(pdf_path)
+        and index.get("embedding_model") == EMBEDDING_MODEL
+        and bool(index.get("chunks"))
+    )
+
+
+def _embed_in_batches(texts: list[str], batch_size: int = 16) -> list[list[float]]:
+    embeddings: list[list[float]] = []
+    for start in range(0, len(texts), batch_size):
+        embeddings.extend(embed_texts(texts[start:start + batch_size]))
+    return embeddings
+
+
+def build_owner_index(force: bool = False) -> dict[str, Any]:
+    """Extract the resume, chunk it, embed each chunk, and persist the index."""
+    if INDEX_PATH.exists() and not force:
+        try:
+            existing = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
+            if _index_is_current(existing):
+                return existing
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    pages = _extract_pdf_pages()
+    chunks: list[dict[str, Any]] = []
+    for page in pages:
+        chunks.extend(_structured_page_chunks(page["page"], page["text"]))
+
+    if not chunks:
+        raise OwnerRAGError("The resume text could not be split into chunks.")
+
+    for order, chunk in enumerate(chunks):
+        chunk["order"] = order
+
+    embeddings = _embed_in_batches([chunk["text"] for chunk in chunks])
+    if len(embeddings) != len(chunks):
+        raise OwnerRAGError("Embedding count did not match chunk count.")
+
+    for chunk, embedding in zip(chunks, embeddings):
+        chunk["embedding"] = embedding
+
+    index = {
+        "version": INDEX_VERSION,
+        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "source_path": str(RESUME_PATH),
+        "source_name": RESUME_PATH.name,
+        "source_mtime": _source_mtime(),
+        "embedding_model": EMBEDDING_MODEL,
+        "chunk_max_chars": CHUNK_MAX_CHARS,
+        "chunk_overlap_words": CHUNK_OVERLAP_WORDS,
+        "chunks": chunks,
+    }
+    INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    INDEX_PATH.write_text(json.dumps(index, indent=2, ensure_ascii=False), encoding="utf-8")
+    return index
+
+
+def load_owner_index() -> dict[str, Any]:
+    """Load the vector index, rebuilding it when missing or stale."""
+    if INDEX_PATH.exists():
+        try:
+            index = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
+            if _index_is_current(index):
+                return index
+        except (OSError, json.JSONDecodeError):
+            pass
+    return build_owner_index(force=True)
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right) or not left:
+        return -1.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    if not left_norm or not right_norm:
+        return -1.0
+    return dot / (left_norm * right_norm)
+
+
+def _identity_anchor(index: dict[str, Any]) -> dict[str, Any] | None:
+    for chunk in index.get("chunks", []):
+        if chunk.get("section") == "Profile":
+            return {
+                "id": chunk["id"],
+                "page": chunk["page"],
+                "section": chunk.get("section", "Profile"),
+                "title": chunk.get("title", "Owner identity"),
+                "text": chunk["text"],
+                "score": 1.0,
+                "reason": "profile_anchor",
+            }
+    return None
+
+
+def retrieve_owner_context(question: str, top_k: int = DEFAULT_TOP_K) -> dict[str, Any]:
+    """Embed the question and return the most relevant resume chunks."""
+    cleaned_question = " ".join(question.split())
+    if not cleaned_question:
+        raise OwnerRAGError("Question cannot be empty.")
+
+    index = load_owner_index()
+    query_embedding = embed_texts([cleaned_question])[0]
+    requested_sections = _query_sections(cleaned_question)
+    if len(requested_sections) >= 3:
+        top_k = max(top_k, min(len(index["chunks"]), 8))
+    section_boost = 0.18
+    scored = []
+    for chunk in index["chunks"]:
+        score = _cosine_similarity(query_embedding, chunk["embedding"])
+        section = chunk.get("section", "General")
+        if section in requested_sections:
+            score += section_boost
+        scored.append({
+            "id": chunk["id"],
+            "page": chunk["page"],
+            "section": section,
+            "title": chunk.get("title", ""),
+            "order": chunk.get("order", 0),
+            "text": chunk["text"],
+            "score": round(score, 4),
+        })
+
+    matches = sorted(scored, key=lambda item: item["score"], reverse=True)[:top_k]
+    matches = _ensure_section_coverage(matches, scored, requested_sections, top_k)
+    should_anchor_identity = (
+        is_creator_identity_question(cleaned_question)
+        or not requested_sections
+        or "Profile" in requested_sections
+    )
+    if is_owner_question(cleaned_question) and should_anchor_identity:
+        anchor = _identity_anchor(index)
+        if anchor and all(match["id"] != anchor["id"] for match in matches):
+            matches = [anchor, *matches[:max(0, top_k - 1)]]
+
+    return {
+        "ok": True,
+        "question": cleaned_question,
+        "source": index["source_name"],
+        "embedding_model": index["embedding_model"],
+        "requested_sections": sorted(requested_sections),
+        "matches": matches,
+    }
+
+
+def _ensure_section_coverage(
+    matches: list[dict[str, Any]],
+    scored: list[dict[str, Any]],
+    requested_sections: set[str],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    if not requested_sections:
+        return matches
+
+    selected_by_id = {match["id"]: match for match in matches}
+    for section in ("Profile", "Education", "Skills", "Experience", "Projects"):
+        if section not in requested_sections:
+            continue
+        if any(match.get("section") == section for match in selected_by_id.values()):
+            continue
+        section_candidates = [
+            candidate for candidate in scored
+            if candidate.get("section") == section
+        ]
+        if section_candidates:
+            best = max(section_candidates, key=lambda item: item["score"])
+            selected_by_id[best["id"]] = best
+
+    selected = list(selected_by_id.values())
+    if len(selected) <= top_k:
+        return sorted(selected, key=lambda item: item["score"], reverse=True)
+
+    required_ids = set()
+    for section in requested_sections:
+        section_matches = [
+            match for match in selected
+            if match.get("section") == section
+        ]
+        if section_matches:
+            required_ids.add(max(section_matches, key=lambda item: item["score"])["id"])
+
+    required = [match for match in selected if match["id"] in required_ids]
+    optional = sorted(
+        [match for match in selected if match["id"] not in required_ids],
+        key=lambda item: item["score"],
+        reverse=True,
+    )
+    return sorted([*required, *optional[:max(0, top_k - len(required))]], key=lambda item: item["score"], reverse=True)
+
+
+def answer_owner_question(question: str, top_k: int = DEFAULT_TOP_K) -> dict[str, Any]:
+    """Answer using only the relevant content retrieved from the resume PDF."""
+    requested_sections = _query_sections(question)
+    project_question = is_project_question(question)
+    if project_question:
+        top_k = max(top_k, 8)
+    elif len(requested_sections) >= 3:
+        top_k = max(top_k, 8)
+    elif requested_sections:
+        top_k = max(top_k, 5)
+    retrieval = retrieve_owner_context(question, top_k=top_k)
+
+    context = "\n\n".join(
+        f"[{match['id']} | page {match['page']} | score {match['score']}]\n{match['text']}"
+        for match in retrieval["matches"]
+    )
+    creator_relation_instruction = (
+        "The question asks who created or owns this assistant. A resume entry "
+        "about an AI-assistant project does not, by itself, establish who "
+        "created this running assistant. Only identify a creator if an excerpt "
+        "explicitly states that relationship."
+        if is_creator_identity_question(question)
+        else ""
+    )
+    system = (
+        "Answer questions from the supplied resume excerpts. The excerpts are "
+        "the only permitted source of personal facts. Do not use general "
+        "knowledge, chat history, application configuration, or assumptions. "
+        "Do not infer that the resume subject created, owns, or is related to "
+        "the assistant unless an excerpt explicitly says so. Write resume facts "
+        "about the subject in third person, never as the assistant's own "
+        "experience. If the excerpts do not support the answer, say exactly: "
+        "'I couldn't find that in Resume_Yashraj.pdf.' Be concise, avoid "
+        "inventing details, and add [page N] after each factual sentence. If "
+        "the answer is supported, do not add a not-found statement."
+    )
+    prompt = (
+        f"Question: {question}\n\n"
+        f"Resume context:\n{context}\n\n"
+        f"{creator_relation_instruction}\n\n"
+        "Answer from the resume context only. Give the requested details "
+        "directly, but include only claims supported by an excerpt."
+    )
+    answer = generate_text(prompt=prompt, system=system, temperature=0.1)
+    pages = sorted({match["page"] for match in retrieval["matches"]})
+    retrieval["answer"] = answer.strip()
+    retrieval["source_pages"] = pages
+    return retrieval
+
+
+def _main() -> None:
+    parser = argparse.ArgumentParser(description="Build and query the owner resume RAG index.")
+    parser.add_argument("command", choices=["build", "retrieve", "ask"])
+    parser.add_argument("question", nargs="*", help="Question for retrieve or ask.")
+    parser.add_argument("--force", action="store_true", help="Rebuild the index even if it is current.")
+    args = parser.parse_args()
+
+    try:
+        if args.command == "build":
+            index = build_owner_index(force=args.force)
+            print(json.dumps({
+                "ok": True,
+                "index": str(INDEX_PATH),
+                "chunks": len(index["chunks"]),
+                "embedding_model": index["embedding_model"],
+            }, indent=2))
+        elif args.command == "retrieve":
+            print(json.dumps(retrieve_owner_context(" ".join(args.question)), indent=2))
+        else:
+            print(json.dumps(answer_owner_question(" ".join(args.question)), indent=2))
+    except (OwnerRAGError, EmbeddingUnavailable) as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+
+
+if __name__ == "__main__":
+    _main()

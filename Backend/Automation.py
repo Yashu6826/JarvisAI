@@ -1,347 +1,337 @@
-from AppOpener import close, open as appopen
-from webbrowser import open as webopen
-from pywhatkit import search, playonyt
-from dotenv import dotenv_values
-from bs4 import BeautifulSoup
-from rich import print
-import google.generativeai as genai
-import webbrowser
-import subprocess
-import urllib.parse
-import requests
-import keyboard
 import asyncio
-import os
-import time 
 import logging
+import platform
+import re
+import subprocess
+import webbrowser
+from pathlib import Path
+from urllib.parse import quote_plus, urlparse
 
-logging.basicConfig(level=logging.INFO)
+from Backend.LLMProvider import LMSTUDIO_MODEL, LocalLLMUnavailable, generate_text
 
 logger = logging.getLogger(__name__)
-
-# Load environment variables
-env_vars = dotenv_values(".env")
-GEMINI_API_KEY = env_vars.get("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
-
-classes = ["zCubwf", "hgKElc", "LTKOO sY7ric", "Z0LcW", "gsrt vk_bk FzvWSb YwPhnf", "pclqee",
-           "tw-Data-text tw-text-small tw-ta", "IZ6dc", "O5uR6d LTKOO", "vlzY6d",
-           "webanswers-webanswers_table_webanswers-table", "dDoNo ikb4Bb gsrt", "sXLaOe",
-           "LWkfKe", "VQF4g", "qv3Wpe", "kno-rdesc", "SPZz6b"]
-
-useragent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.75 Safari/537.36'
-
-professional_responses = [
-    "Your satisfaction is my top priority; feel free to reach out if there's anything else I can help you with. ",
-    "I'm at your service for any additional questions or support you may need-don't hesitate to ask."
-]
-
-messages = []
-
-SystemChatBot = [{"role": "system", "content": f"Hello, I am yashraj, You're a content writer. You have to write content like letter"}]
-
-def GoogleSearch(Topic):
-    search(Topic)
-    return True
+DATA_DIR = Path("Data")
+DATA_DIR.mkdir(exist_ok=True)
 
 
+def _clean_open_target(target: str) -> str:
+    cleaned = " ".join(target.strip().rstrip(".,!?").lower().split())
+    cleaned = re.sub(r"^(?:the|official)\s+", "", cleaned)
+    cleaned = re.sub(r"\s+(?:official\s+)?(?:website|web site|site|page|app)$", "", cleaned)
+    return cleaned.strip()
 
-def Content(Topic):
-    def OpenNotepad(File):
-        default_text_editor = 'notepad.exe'
-        subprocess.Popen([default_text_editor, File])
 
-    def ContentWriterAI(prompt):
-        messages.append({"role": "user", "content": f"{prompt}"})
+def _website_url(target: str) -> str | None:
+    cleaned = target.strip().rstrip(".,!?")
+    lowered = _clean_open_target(cleaned)
+    if lowered.startswith(("http://", "https://")):
+        parsed = urlparse(cleaned)
+        return cleaned if parsed.netloc else None
+    if re.fullmatch(r"(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/.*)?", lowered):
+        return f"https://{cleaned}"
+    return None
 
-        # Initialize Gemini model
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={
-                "max_output_tokens": 2048,
-                "temperature": 0.7,
-                "top_p": 1.0,
-            }
+
+def _official_site_search_url(target: str) -> str:
+    cleaned = _clean_open_target(target) or target.strip()
+    return f"https://www.google.com/search?q={quote_plus(cleaned + ' official website')}&btnI=1"
+
+
+def OpenLocalApp(app_name: str) -> bool:
+    """Open only an installed application; never guess a website."""
+    try:
+        from AppOpener import open as appopen
+
+        appopen(app_name, match_closest=True, output=True, throw_error=True)
+        logger.info("Opened local application '%s'.", app_name)
+        return True
+    except Exception as exc:
+        logger.warning("Could not open local application '%s': %s", app_name, exc)
+        return False
+
+
+def OpenApp(app_name: str) -> bool:
+    """Legacy helper for the desktop UI; the LangGraph agent uses separate tools."""
+    website = _website_url(app_name)
+    if website:
+        opened = webbrowser.open(website, new=2)
+        logger.info("Opened website '%s'.", website)
+        return bool(opened)
+
+    if OpenLocalApp(app_name):
+        return True
+
+    fallback = _official_site_search_url(app_name)
+    opened = webbrowser.open(fallback, new=2)
+    logger.info("Opened official-site search fallback '%s'.", fallback)
+    return bool(opened)
+
+
+def OpenWebSearch(query: str) -> bool:
+    return bool(webbrowser.open(
+        f"https://www.google.com/search?q={quote_plus(query.strip())}",
+        new=2,
+    ))
+
+
+def CloseApp(app_name: str) -> bool:
+    if "chrome" in app_name.lower():
+        return False
+    try:
+        from AppOpener import close
+
+        close(app_name, match_closest=True, output=True, throw_error=True)
+        return True
+    except Exception:
+        return False
+
+
+def _safe_file_name(topic: str) -> str:
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", topic.strip()).strip("_")
+    return safe_name[:80] or "document"
+
+
+def Content(topic: str) -> bool:
+    try:
+        answer = generate_text(
+            prompt=topic,
+            system=(
+                "You are a helpful local content writer. Write clear, polished "
+                "content for the user's request. Return only the requested content."
+            ),
+            model=LMSTUDIO_MODEL,
+            temperature=0.7,
         )
+    except LocalLLMUnavailable as exc:
+        logger.error("Content generation unavailable: %s", exc)
+        return False
 
-        # Convert message history to Gemini-compatible format
-        gemini_messages = []
-        for msg in SystemChatBot + messages:
-            gemini_messages.append({
-                "role": "model" if msg["role"] == "assistant" else "user",
-                "parts": [msg["content"]]
-            })
+    output_path = DATA_DIR / f"{_safe_file_name(topic)}.txt"
+    output_path.write_text(answer, encoding="utf-8")
+    subprocess.Popen(["notepad.exe", str(output_path)])
+    return True
 
-        # Generate content with streaming
-        response = model.generate_content(
-            contents=gemini_messages,
-            stream=True
+
+def System(command: str) -> bool:
+    import keyboard
+
+    actions = {
+        "mute": "volume mute",
+        "unmute": "volume unmute",
+        "volume up": "volume up",
+        "volume down": "volume down",
+    }
+    key = actions.get(command.lower())
+    if not key:
+        return False
+    keyboard.press_and_release(key)
+    return True
+
+
+def SetBrightness(level: int) -> bool:
+    """Set display brightness on Windows using WMI."""
+    safe_level = max(0, min(100, int(level)))
+    script = (
+        "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods)"
+        f".WmiSetBrightness(1,{safe_level})"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
-
-        Answer = ""
-        for chunk in response:
-            if chunk.text:
-                Answer += chunk.text
-
-        messages.append({"role": "assistant", "content": Answer})
-        return Answer
-
-    Topic = Topic.replace("content ", "")
-    contentByAI = ContentWriterAI(Topic)
-
-    with open(rf"Data\{Topic.lower().replace(' ', '')}.txt", "w", encoding="utf-8") as file:
-        file.write(contentByAI)
-        file.close()
-
-    OpenNotepad(rf"Data\{Topic.lower().replace(' ', '')}.txt")
-    return True
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
+def ChangeBrightness(direction: str, step: int = 10) -> bool:
+    """Increase or decrease brightness in bounded steps."""
+    safe_step = max(1, min(100, int(step)))
+    get_script = "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness"
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", get_script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode != 0:
+            return False
+        current = int((result.stdout or "").strip().splitlines()[-1])
+    except Exception:
+        return False
 
-def YouTubeSearch(Topic):
-    Url4Search = f"https://www.youtube.com/results?search_query={Topic}"
-    webbrowser.open(Url4Search)
-    return True
+    if direction == "up":
+        target = current + safe_step
+    elif direction == "down":
+        target = current - safe_step
+    else:
+        return False
+    return SetBrightness(target)
 
-def PlayYoutube(query):
-    playonyt(query)
-    return True
+
+def GetSystemSpecs() -> dict[str, str]:
+    """Collect a concise set of Windows system specifications."""
+    specs = {
+        "device_name": platform.node() or "Unknown",
+        "os": f"{platform.system()} {platform.release()}",
+        "version": platform.version(),
+        "architecture": platform.machine() or "Unknown",
+        "processor": platform.processor() or "Unknown",
+        "ram": "Unknown",
+        "storage": "Unknown",
+        "gpu": "Unknown",
+    }
+
+    commands = {
+        "ram": [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 2)",
+        ],
+        "storage": [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "[math]::Round((Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | Measure-Object -Property Size -Sum).Sum / 1GB, 2)",
+        ],
+        "gpu": [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "(Get-CimInstance Win32_VideoController | Select-Object -First 1 -ExpandProperty Name)",
+        ],
+    }
+
+    for key, command in commands.items():
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=12,
+                check=False,
+            )
+            if result.returncode == 0:
+                value = (result.stdout or "").strip().splitlines()
+                if value:
+                    specs[key] = value[-1].strip()
+        except Exception:
+            continue
+
+    if specs["ram"] != "Unknown":
+        specs["ram"] = f'{specs["ram"]} GB'
+    if specs["storage"] != "Unknown":
+        specs["storage"] = f'{specs["storage"]} GB'
+    return specs
 
 
-def OpenApp(app_name, sess=None):
-    if sess is None:
-        sess = requests.Session()
+def GetPowerAndWifiStatus() -> dict[str, str]:
+    """Read battery percentage/charging state and Wi-Fi connection status."""
+    status = {
+        "battery_percentage": "Unknown",
+        "battery_state": "Unknown",
+        "wifi_status": "Unknown",
+        "wifi_name": "",
+    }
+
+    battery_script = (
+        "$b = Get-CimInstance Win32_Battery | Select-Object -First 1;"
+        "if ($null -eq $b) { 'Unavailable|Desktop or battery not detected' } "
+        "else { \"$($b.EstimatedChargeRemaining)|$($b.BatteryStatus)\" }"
+    )
+    wifi_script = (
+        "$profile = netsh wlan show interfaces | Select-String '^\\s*SSID\\s*:\\s*(.+)$' | "
+        "Select-Object -First 1;"
+        "$state = netsh wlan show interfaces | Select-String '^\\s*State\\s*:\\s*(.+)$' | "
+        "Select-Object -First 1;"
+        "if ($null -eq $state) { 'Unknown|' } "
+        "else { "
+        "$wifiState = ($state.Matches[0].Groups[1].Value).Trim();"
+        "$wifiName = if ($profile) { ($profile.Matches[0].Groups[1].Value).Trim() } else { '' };"
+        "\"$wifiState|$wifiName\" }"
+    )
 
     try:
-        # Try to open the app using AppOpener
-        appopen(app_name, match_closest=False, output=True, throw_error=True)
-        logger.info(f"Successfully opened app '{app_name}'.")
-        return True
-    except Exception as e:
-        logger.warning(f"App '{app_name}' not found: {e}. Attempting web search...")
-
-        def extract_links(html):
-            if not html:
-                logger.debug("No HTML provided to extract links.")
-                return []
-            try:
-                soup = BeautifulSoup(html, 'html.parser')
-                # Find all <a> tags with href
-                links = soup.find_all('a', href=True)
-                valid_links = []
-                for link in links:
-                    href = link.get('href')
-                    if not href:
-                        continue
-                    # Handle Google's /url?q= links
-                    if href.startswith('/url?q='):
-                        parsed = urllib.parse.urlparse(href)
-                        query = urllib.parse.parse_qs(parsed.query)
-                        if 'q' in query:
-                            actual_url = query['q'][0]
-                            if actual_url.startswith(('http://', 'https://')):
-                                valid_links.append(actual_url)
-                    # Handle direct URLs
-                    elif href.startswith(('http://', 'https://')):
-                        valid_links.append(href)
-                
-                # Filter and prioritize links
-                app_name_lower = app_name.lower()
-                prioritized_links = []
-                other_valid_links = []
-                for link in valid_links:
-                    # Skip irrelevant Google links
-                    if ('google.com' in link.lower() or
-                            link.startswith('/search') or
-                            'accounts.google.com' in link.lower() or
-                            '/maps/' in link.lower() or
-                            '/translate' in link.lower()):
-                        continue
-                    # Prioritize links for specific apps
-                    if app_name_lower == 'playstore':
-                        if 'play.google.com' in link.lower():
-                            prioritized_links.insert(0, link)  # Prioritize play.google.com
-                        else:
-                            other_valid_links.append(link)
-                    elif app_name_lower in link.lower():
-                        prioritized_links.insert(0, link)  # Prioritize links with app_name
-                    else:
-                        other_valid_links.append(link)
-                
-                # Combine prioritized and other valid links
-                all_links = prioritized_links + other_valid_links
-                # Remove duplicates while preserving order
-                seen = set()
-                unique_links = [link for link in all_links if not (link in seen or seen.add(link))]
-                logger.debug(f"Extracted links: {unique_links}")
-                return unique_links[:1] if unique_links else []  # Return top link or empty list
-            except Exception as e:
-                logger.error(f"Error extracting links: {e}")
-                return []
-
-        def search_google(query):
-            url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            try:
-                time.sleep(1)  # Avoid rate-limiting
-                response = sess.get(url, headers=headers, timeout=10)
-                if response.status_code == 200:
-                    logger.info(f"Successfully fetched Google search results for '{query}'")
-                    # Save HTML for debugging
-                    with open(f"search_results_{app_name}.html", "w", encoding="utf-8") as f:
-                        f.write(response.text)
-                    return response.text
-                else:
-                    logger.error(f"Failed to fetch search results for '{query}'. Status code: {response.status_code}")
-                    return None
-            except Exception as e:
-                logger.error(f"Error during Google search: {e}")
-                return None
-
-        # Fallback URLs (used only if search fails or no valid links)
-        fallback_urls = {
-            'facebook': 'https://www.facebook.com',
-            'twitter': 'https://www.x.com',
-            'youtube': 'https://www.youtube.com',
-            'instagram': 'https://www.instagram.com',
-            'playstore': 'https://play.google.com',
-        }
-
-        # Perform Google search
-        search_query = app_name  # e.g., "playstore"
-        html = search_google(search_query)
-        if html:
-            links = extract_links(html)
-            if links:
-                # Open the first valid link
-                logger.info(f"Opening link: {links[0]}")
-                webopen(links[0])
-                return True
-            else:
-                logger.warning(f"No valid links found in search results for '{search_query}'.")
-        else:
-            logger.warning(f"Google search failed for '{search_query}'.")
-
-        # Use fallback URL if available
-        if app_name.lower() in fallback_urls:
-            logger.info(f"Search failed, using fallback URL for '{app_name}': {fallback_urls[app_name.lower()]}")
-            webopen(fallback_urls[app_name.lower()])
-            return True
-        else:
-            # Try a secondary search to open the first valid link
-            logger.info(f"No fallback URL for '{app_name}'. Attempting to open first valid search result...")
-            html = search_google(search_query)
-            if html:
-                soup = BeautifulSoup(html, 'html.parser')
-                links = soup.find_all('a', href=True)
-                valid_links = [
-                    link.get('href') for link in links
-                    if link.get('href').startswith(('http://', 'https://'))
-                    and 'google.com' not in link.get('href').lower()
-                    and not link.get('href').startswith('/search')
-                ]
-                if valid_links:
-                    logger.info(f"Opening first valid search result: {valid_links[0]}")
-                    webopen(valid_links[0])
-                    return True
-                else:
-                    logger.error(f"No valid links found in secondary search for '{search_query}'.")
-                    return False
-            else:
-                logger.error(f"Secondary Google search failed for '{search_query}'.")
-                return False
-
-# OpenApp("whatsapp")
-
-
-def CloseApp(app):
-    if "chrome" in app:
+        battery_result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", battery_script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if battery_result.returncode == 0:
+            battery_value = (battery_result.stdout or "").strip().split("|", 1)
+            if len(battery_value) == 2:
+                status["battery_percentage"] = battery_value[0].strip() or "Unknown"
+                battery_state_code = battery_value[1].strip()
+                battery_states = {
+                    "1": "Discharging",
+                    "2": "AC connected",
+                    "3": "Fully charged",
+                    "4": "Low",
+                    "5": "Critical",
+                    "6": "Charging",
+                    "7": "Charging and high",
+                    "8": "Charging and low",
+                    "9": "Charging and critical",
+                    "10": "Undefined",
+                    "11": "Partially charged",
+                    "Desktop or battery not detected": "Desktop or battery not detected",
+                }
+                status["battery_state"] = battery_states.get(battery_state_code, battery_state_code or "Unknown")
+    except Exception:
         pass
-    else:
-        try:
-            close(app, match_closest=True, output=True, throw_error=True)
-            return True
-        except:
-            return False
-        
 
+    try:
+        wifi_result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", wifi_script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if wifi_result.returncode == 0:
+            wifi_value = (wifi_result.stdout or "").strip().split("|", 1)
+            if len(wifi_value) == 2:
+                status["wifi_status"] = wifi_value[0].strip() or "Unknown"
+                status["wifi_name"] = wifi_value[1].strip()
+    except Exception:
+        pass
 
-def System(command):
-    def mute():
-        keyboard.press_and_release("volume mute")
+    if status["battery_percentage"] not in {"Unknown", "Unavailable"} and status["battery_percentage"].isdigit():
+        status["battery_percentage"] = f'{status["battery_percentage"]}%'
+    return status
 
-    def unmute():
-        keyboard.press_and_release("volume unmute")
-
-    def volume_up():
-        keyboard.press_and_release("volume up")
-
-    def volume_down():
-        keyboard.press_and_release("volume down")
-
-    if command == "mute":
-        mute()
-    elif command == "unmute":
-        unmute()
-    elif command == "volume up":
-        volume_up()
-    elif command == "volume down":
-        volume_down()
-
-    return True
 
 async def TranslateAndExecute(commands: list[str]):
-    funcs = []
-
+    tasks = []
     for command in commands:
         if command.startswith("open "):
-            if "open it" in command:
-                pass
-            if "open file" == command:
-                pass
-            else:
-                fun = asyncio.to_thread(OpenApp, command.removeprefix("open "))
-                funcs.append(fun)
-        
-        elif command.startswith("general "):
-            pass
-        elif command.startswith("realtime "):
-            pass
+            tasks.append(asyncio.to_thread(OpenApp, command.removeprefix("open ")))
         elif command.startswith("close "):
-            fun = asyncio.to_thread(CloseApp, command.removeprefix("close "))
-            funcs.append(fun)
-        elif command.startswith("play "):
-            fun = asyncio.to_thread(PlayYoutube, command.removeprefix("play "))
-            funcs.append(fun)
+            tasks.append(asyncio.to_thread(CloseApp, command.removeprefix("close ")))
         elif command.startswith("content "):
-            fun = asyncio.to_thread(Content, command.removeprefix("content "))
-            funcs.append(fun)
-        elif command.startswith("google search "):
-            fun = asyncio.to_thread(GoogleSearch, command.removeprefix("google search "))
-            funcs.append(fun)
-        elif command.startswith("youtube search "):
-            fun = asyncio.to_thread(YouTubeSearch, command.removeprefix("youtube search "))
-            funcs.append(fun)
+            tasks.append(asyncio.to_thread(Content, command.removeprefix("content ")))
         elif command.startswith("system "):
-            fun = asyncio.to_thread(System, command.removeprefix("system "))
-            funcs.append(fun)
-        else:
-            print(f"No Function Found, For {command}")
+            tasks.append(asyncio.to_thread(System, command.removeprefix("system ")))
 
-    results = await asyncio.gather(*funcs)
+    for result in await asyncio.gather(*tasks):
+        yield result
 
-    for result in results:
-        if isinstance(result, str):
-            yield result
-        else:
-            yield result
 
-async def Automation(commands: list[str]):
+async def Automation(commands: list[str]) -> bool:
+    results = []
     async for result in TranslateAndExecute(commands):
-        pass
-    return True
+        results.append(bool(result))
+    return bool(results) and all(results)
+
 
 if __name__ == "__main__":
-    asyncio.run(Automation(["play Dooriyan"]))
+    asyncio.run(Automation(["content a short leave application"]))
