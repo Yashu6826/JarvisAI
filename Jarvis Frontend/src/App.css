@@ -1190,6 +1190,13 @@ button {
   text-transform: uppercase;
 }
 
+.thinking-detail {
+  margin: -2px 0 8px 30px;
+  color: #91a2b6;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .thinking-pulse {
   display: flex;
   align-items: center;
