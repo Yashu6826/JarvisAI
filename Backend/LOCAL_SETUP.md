@@ -27,7 +27,7 @@ run only the local model.
 
 ## 2. Install Python packages
 
-Run: `..\.venv\Scripts\python.exe -m pip install -r Requirements.txt` from `Backend`.
+Run: `..\.venv\Scripts\python.exe -m pip install -r requirements-local.txt` from `Backend`.
 
 ## 3. Start LM Studio fallback
 
@@ -95,7 +95,7 @@ updating, deleting, or responding to an event is held for UI approval.
 
 1. Install the dependencies:
 
-   `python -m pip install -r Backend/Requirements.txt`
+   `python -m pip install -r Backend/requirements-local.txt`
 
 2. In Google Cloud, create an OAuth **Web application** client and add this
    authorized redirect URI for local development:
@@ -150,7 +150,7 @@ photos or crowd ratings.
 
 1. Add `OPENROUTER_API_KEY` in `.env`. Start LM Studio too if you want fallback,
    load the model configured in `.env`, and start its local server.
-2. Install Python dependencies: `pip install -r Backend/Requirements.txt`
+2. Install Python dependencies: `pip install -r Backend/requirements-local.txt`
 3. Build the frontend once: `cd "Jarvis Frontend"` then `npm install` and `npm run build`
 4. From the project root, run: `.venv\Scripts\python.exe -m Backend.Main` (or
    `.venv\Scripts\python.exe -m Backend.WebApp`). Direct launches also self-correct to

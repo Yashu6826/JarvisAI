@@ -17,11 +17,12 @@ from urllib.parse import urlencode
 import requests
 
 from Backend.LLMProvider import get_config
+from Backend.Paths import DATA_DIR
 
 
 ROOT = Path(__file__).resolve().parent
-DATA_PATH = ROOT / "Data" / "GoogleConnections.json"
-STATE_PATH = ROOT / "Data" / "GoogleOAuthStates.json"
+DATA_PATH = DATA_DIR / "GoogleConnections.json"
+STATE_PATH = DATA_DIR / "GoogleOAuthStates.json"
 SESSION_COOKIE = "nexa_google_session"
 _SESSION_ID = contextvars.ContextVar("nexa_google_session_id", default="")
 _JSON_LOCK = threading.RLock()
@@ -117,7 +118,7 @@ def _cipher() -> Any:
         from cryptography.fernet import Fernet
     except ImportError as exc:
         raise GoogleOAuthError(
-            "Google OAuth requires the cryptography package. Install Requirements.txt first."
+            "Google OAuth requires the cryptography package. Install requirements.txt first."
         ) from exc
     try:
         return Fernet(_fernet_key())

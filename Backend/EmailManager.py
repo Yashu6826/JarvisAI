@@ -22,11 +22,11 @@ from Backend.GoogleOAuth import (
     google_mcp_connected,
 )
 from Backend.LLMProvider import LMSTUDIO_MODEL, LocalLLMUnavailable, generate_text
+from Backend.Paths import DATA_DIR
 
 
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
 ROOT = Path(__file__).resolve().parent
-DATA_DIR = ROOT / "Data"
 EMAIL_RECORDS_PATH = DATA_DIR / "PendingEmails.json"
 GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 PENDING_TTL = timedelta(minutes=30)

@@ -10,11 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from Backend.GoogleOAuth import current_session_id
+from Backend.Paths import DATA_DIR
 
 
 ROOT = Path(__file__).resolve().parent
-TODO_FILE = ROOT / "Data" / "Todos.json"
-SESSION_DATA_DIR = ROOT / "Data" / "Sessions"
+TODO_FILE = DATA_DIR / "Todos.json"
+SESSION_DATA_DIR = DATA_DIR / "Sessions"
 _lock = threading.Lock()
 
 

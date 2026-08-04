@@ -21,6 +21,7 @@ from Backend.MongoStore import (
     load_messages as mongo_load_messages,
     save_exchange as mongo_save_exchange,
 )
+from Backend.Paths import DATA_DIR
 
 Username = get_config("Username", "User")
 Assistantname = get_config("Assistantname", "NEXA")
@@ -34,8 +35,8 @@ schedules, prior events, or personal details unless the user explicitly gives th
 """
 
 ROOT = Path(__file__).resolve().parent
-CHAT_LOG_PATH = ROOT / "Data" / "ChatLog.json"
-SESSION_DATA_DIR = ROOT / "Data" / "Sessions"
+CHAT_LOG_PATH = DATA_DIR / "ChatLog.json"
+SESSION_DATA_DIR = DATA_DIR / "Sessions"
 THINKING_SUMMARY_ENABLED = get_config("THINKING_SUMMARY_ENABLED", "true").lower() == "true"
 _locks_guard = threading.Lock()
 _history_locks: dict[str, threading.RLock] = {}

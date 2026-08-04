@@ -16,11 +16,12 @@ from Backend.LLMProvider import (
     embed_texts,
     generate_text,
 )
+from Backend.Paths import DATA_DIR
 
 
 ROOT = Path(__file__).resolve().parent
 RESUME_PATH = ROOT / "Resume_Yashraj.pdf"
-INDEX_PATH = ROOT / "Data" / "OwnerRAG" / "index.json"
+INDEX_PATH = DATA_DIR / "OwnerRAG" / "index.json"
 CHUNK_MAX_CHARS = 900
 CHUNK_OVERLAP_WORDS = 35
 DEFAULT_TOP_K = 4
@@ -220,7 +221,7 @@ def _extract_pdf_pages(pdf_path: Path = RESUME_PATH) -> list[dict[str, Any]]:
         from pypdf import PdfReader
     except ImportError as exc:
         raise OwnerRAGError(
-            "Install pypdf first: python -m pip install -r Requirements.txt"
+            "Install pypdf first: python -m pip install -r requirements.txt"
         ) from exc
 
     reader = PdfReader(str(pdf_path))

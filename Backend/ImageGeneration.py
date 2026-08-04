@@ -8,6 +8,7 @@ from time import sleep
 import requests
 from dotenv import dotenv_values
 from PIL import Image
+from Backend.Paths import DATA_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -21,10 +22,6 @@ SD_IMAGE_HEIGHT = int(env_vars.get("SD_IMAGE_HEIGHT", "512"))
 SD_STEPS = int(env_vars.get("SD_STEPS", "15"))
 SD_CFG_SCALE = float(env_vars.get("SD_CFG_SCALE", "7"))
 SD_BATCH_SIZE = int(env_vars.get("SD_BATCH_SIZE", "1"))
-
-DATA_DIR = ROOT / "Data"
-DATA_DIR.mkdir(exist_ok=True)
-
 
 def _safe_prompt_name(prompt: str) -> str:
     return "".join(character if character.isalnum() else "_" for character in prompt)[:80]

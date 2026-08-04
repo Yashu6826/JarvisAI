@@ -1014,6 +1014,8 @@ async def transcribe_audio(request: AudioRequest) -> ListenResponse:
 @app.get("/{requested_path:path}", include_in_schema=False)
 def frontend(requested_path: str):
     if not FRONTEND_DIST.exists():
+        if not requested_path:
+            return {"ok": True, "service": "Nexa API"}
         raise HTTPException(
             status_code=503,
             detail="Frontend is not built. Run npm run build in 'Jarvis Frontend'.",
@@ -1034,4 +1036,4 @@ def frontend(requested_path: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("WebApp:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("Backend.WebApp:app", host="127.0.0.1", port=8000, reload=False)
