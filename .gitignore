@@ -15,3 +15,5 @@ Backend/Data/OwnerRAG/
 Backend/Data/speech.mp3
 Backend/Data/*.txt
 Backend/dxdiag_report.txt
+Backend/certifi-*.whl
+Backend/search_results_*.html
