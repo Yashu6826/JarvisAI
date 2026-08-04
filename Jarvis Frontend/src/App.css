@@ -2715,7 +2715,7 @@ button {
 .chat-header { background: rgba(18, 28, 42, .30); backdrop-filter: blur(16px); }.conversation { background-image: none; background-color: transparent; }
 .composer-dock { background: linear-gradient(180deg, rgba(8,12,18,.05), rgba(8,12,18,.66) 28%); backdrop-filter: blur(10px); }.text-composer { background: rgba(23, 35, 50, .64); backdrop-filter: blur(22px) saturate(135%); }
 .right-todo-card { background: linear-gradient(145deg, rgba(34,48,68,.5), rgba(15,23,33,.38)); backdrop-filter: blur(22px) saturate(135%); }
-.message { max-width: 760px; margin-top: 20px; margin-bottom: 20px; }.message-content,.message.assistant .message-content,.message.user .message-content { border: 0; border-radius: 0; background: transparent; box-shadow: none; }.message.user .message-content { padding: 0; }.message.user { max-width: 70%; }.message.user .message-content > p { display: inline-block; padding: 10px 14px; border: 1px solid rgba(112,240,193,.18); border-radius: 15px 15px 4px 15px; background: rgba(56,129,111,.14); backdrop-filter: blur(14px); }.message.assistant .message-content { padding: 0 0 0 3px; }.message-meta { margin-bottom: 8px; }.markdown-body { font-size: 15px; }.assistant-avatar { flex: 0 0 34px; width: 34px; height: 34px; border: 1px solid rgba(112,240,193,.25); background: rgba(112,240,193,.08); }
+.message { max-width: 760px; margin-top: 20px; margin-bottom: 20px; }.message-content,.message.assistant .message-content,.message.user .message-content { border: 0; border-radius: 0; background: transparent; box-shadow: none; }.message.user { max-width: 70%; }.message.user .message-content { display: flex; width: fit-content; max-width: 100%; flex-direction: column; align-items: flex-end; padding: 0; }.message.user .message-content > p { display: inline-block; max-width: 100%; padding: 10px 14px; border: 1px solid rgba(127,236,196,.28); border-radius: 15px 15px 4px 15px; background: linear-gradient(135deg, rgba(59,159,128,.44), rgba(38,101,96,.36)); box-shadow: 0 10px 26px rgba(41,157,124,.12), inset 0 1px 0 rgba(255,255,255,.075); overflow-wrap: anywhere; backdrop-filter: blur(14px); }.message.assistant .message-content { padding: 0 0 0 3px; }.message-meta { margin-bottom: 8px; }.markdown-body { font-size: 15px; }.assistant-avatar { flex: 0 0 34px; width: 34px; height: 34px; border: 1px solid rgba(112,240,193,.25); background: rgba(112,240,193,.08); }
 
 /* Chat readability polish. Keep this late so it wins over the older light-theme
    markdown rules that still exist earlier in the file. */
@@ -2800,18 +2800,18 @@ button {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: pre-wrap;
-  border-color: rgba(126, 246, 204, .42);
-  color: #f8fffb;
+  border-color: rgba(127, 236, 196, .32);
+  color: #eef5ff;
   background:
-    linear-gradient(135deg, rgba(50, 145, 121, .58), rgba(27, 76, 83, .46)),
-    rgba(17, 30, 42, .72);
+    linear-gradient(135deg, rgba(59, 159, 128, .52), rgba(38, 101, 96, .4)),
+    rgba(14, 31, 35, .7);
   box-shadow:
-    0 12px 28px rgba(0, 0, 0, .24),
+    0 10px 26px rgba(41, 157, 124, .13),
     inset 0 1px 0 rgba(255, 255, 255, .08);
   font-size: 15px;
   font-weight: 400;
   line-height: 1.55;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, .22);
+  text-shadow: none;
 }
 
 .conversation {
@@ -3177,6 +3177,23 @@ button {
 .session-collaboration-bar > div:first-child { min-width: 0; display: grid; gap: 2px; }
 .session-collaboration-bar > div:first-child strong { overflow: hidden; color: #eef6ff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .session-collaboration-bar .section-label { font-size: 8px; }
+.session-day-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(220px, 34vw);
+  overflow: hidden;
+  color: #9eadc1;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .04em;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .session-collaboration-actions { display: flex; align-items: center; gap: 7px; }
 .session-collaboration-actions button,.member-actions button { display: inline-grid; width: 32px; height: 32px; place-items: center; border: 1px solid rgba(160,190,230,.18); border-radius: 7px; color: #b9c9dc; background: rgba(255,255,255,.04); cursor: pointer; }
 .session-collaboration-actions button:hover,.member-actions button:hover { color: #8bf7cf; border-color: rgba(112,240,193,.38); background: rgba(112,240,193,.1); }

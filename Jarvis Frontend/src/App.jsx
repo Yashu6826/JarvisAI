@@ -12,6 +12,7 @@ const starterMessages = [
     role: 'assistant',
     text: "I'm online and ready. What can I help you with?",
     time: 'Now',
+    createdAt: new Date().toISOString(),
   },
 ]
 
@@ -33,16 +34,33 @@ function formatMessageTime(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return 'Just now'
   return new Intl.DateTimeFormat(undefined, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   }).format(date)
 }
 
+function startOfLocalDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function formatMessageDay(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const today = startOfLocalDay(new Date())
+  const target = startOfLocalDay(date)
+  const dayOffset = Math.round((today - target) / 86400000)
+  if (dayOffset === 0) return 'Today'
+  if (dayOffset === 1) return 'Yesterday'
+  return new Intl.DateTimeFormat(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
+
 function messageWithDocumentReference(message, id) {
   const content = String(message?.content || '')
+  const createdAt = message.created_at || new Date().toISOString()
   const replyTo = message?.reply_to ? {
     id: String(message.reply_to.id || ''),
     role: String(message.reply_to.role || ''),
@@ -57,7 +75,8 @@ function messageWithDocumentReference(message, id) {
       id,
       role: message.role,
       text: content,
-      time: formatMessageTime(message.created_at),
+      time: formatMessageTime(createdAt),
+      createdAt,
       senderName: message.sender_name,
       sender_user_id: message.sender_user_id,
       ...(replyTo ? { replyTo } : {}),
@@ -72,7 +91,8 @@ function messageWithDocumentReference(message, id) {
     role: message.role,
     text: content.slice(0, match.index).trim(),
     documentName,
-    time: formatMessageTime(message.created_at),
+    time: formatMessageTime(createdAt),
+    createdAt,
     senderName: message.sender_name,
     sender_user_id: message.sender_user_id,
     ...(replyTo ? { replyTo } : {}),
@@ -591,6 +611,7 @@ function App() {
   const [inviteCopied, setInviteCopied] = useState(false)
   const [replyTarget, setReplyTarget] = useState(null)
   const [composerHelpOpen, setComposerHelpOpen] = useState(false)
+  const [visibleMessageDay, setVisibleMessageDay] = useState('')
   const [browserLocation, setBrowserLocation] = useState(() => ({
     status: 'idle',
     location: null,
@@ -750,6 +771,34 @@ function App() {
       ? 'Nexa'
       : (message?.senderName || (message?.sender_user_id === user?.id ? 'You' : 'Member'))
   ), [user?.id])
+  const fallbackMessageDay = messages.find((message) => message.role !== 'system' && message.createdAt)?.createdAt
+  const sessionDayLabel = visibleMessageDay || (fallbackMessageDay ? formatMessageDay(fallbackMessageDay) : '')
+
+  useEffect(() => {
+    const feed = feedRef.current
+    if (!feed) return undefined
+
+    const updateVisibleDay = () => {
+      const messageNodes = Array.from(feed.querySelectorAll('[data-message-day]'))
+      if (!messageNodes.length) {
+        setVisibleMessageDay('')
+        return
+      }
+      const feedTop = feed.getBoundingClientRect().top
+      const markerLine = feedTop + 18
+      const visibleNode = messageNodes.find((node) => node.getBoundingClientRect().bottom >= markerLine) || messageNodes[messageNodes.length - 1]
+      setVisibleMessageDay(visibleNode?.dataset.messageDay || '')
+    }
+
+    updateVisibleDay()
+    feed.addEventListener('scroll', updateVisibleDay, { passive: true })
+    window.addEventListener('resize', updateVisibleDay)
+    return () => {
+      feed.removeEventListener('scroll', updateVisibleDay)
+      window.removeEventListener('resize', updateVisibleDay)
+    }
+  }, [activeSessionId, messages])
+
   const startReply = useCallback((message) => {
     const preview = replyPreviewFromMessage(message)
     if (!preview) return
@@ -1040,11 +1089,13 @@ function App() {
       if (!response.ok) throw new Error(data.detail || `Could not ${action} the email.`)
 
       applyPendingEmail(null)
+      const createdAt = new Date().toISOString()
       setMessages((current) => [...current, {
         id: Date.now() + 2,
         role: 'assistant',
         text: data.message,
-        time: formatMessageTime(),
+        time: formatMessageTime(createdAt),
+        createdAt,
       }])
       setIsOnline(true)
     } catch (error) {
@@ -1083,11 +1134,13 @@ function App() {
       if (!response.ok) throw new Error(data.detail || `Could not ${action} the connected action.`)
 
       setPendingMcpAction(null)
+      const createdAt = new Date().toISOString()
       setMessages((current) => [...current, {
         id: Date.now() + 3,
         role: 'assistant',
         text: data.message,
-        time: formatMessageTime(),
+        time: formatMessageTime(createdAt),
+        createdAt,
       }])
       setIsOnline(true)
     } catch (error) {
@@ -1123,6 +1176,7 @@ function App() {
       setApiError('Start AI and document requests with @Agent in shared sessions.')
       return
     }
+    const createdAt = new Date().toISOString()
     setMessages((current) => [
       ...current,
       {
@@ -1131,7 +1185,8 @@ function App() {
         text: cleanMessage,
         ...(attachedPdf ? { documentName: attachedPdf.name } : {}),
         ...(selectedReply ? { replyTo: selectedReply } : {}),
-        time: formatMessageTime(),
+        time: formatMessageTime(createdAt),
+        createdAt,
       },
     ])
     if (attachedPdf) clearPdfAttachment()
@@ -1188,11 +1243,13 @@ function App() {
           : ''
         const completedAnswer = `${data.answer || ''}${citationNote}`.trim()
         if (!completedAnswer) throw new Error('Nexa returned an empty PDF answer.')
+        const answerCreatedAt = new Date().toISOString()
         setMessages((current) => [...current, {
           id: Date.now() + 1,
           role: 'assistant',
           text: completedAnswer,
-          time: formatMessageTime(),
+          time: formatMessageTime(answerCreatedAt),
+          createdAt: answerCreatedAt,
           cards: {
             document: data.document || null,
             pdfCitations: data.citations || [],
@@ -1221,11 +1278,13 @@ function App() {
         const citationNote = citationLabels.length ? `\n\nSources: ${citationLabels.join(', ')}` : ''
         const completedAnswer = `${data.answer || ''}${citationNote}`.trim()
         if (!completedAnswer) throw new Error('Nexa returned an empty document answer.')
+        const answerCreatedAt = new Date().toISOString()
         setMessages((current) => [...current, {
           id: Date.now() + 1,
           role: 'assistant',
           text: completedAnswer,
-          time: formatMessageTime(),
+          time: formatMessageTime(answerCreatedAt),
+          createdAt: answerCreatedAt,
           cards: { document: data.document || null, pdfCitations: citations },
         }])
         if (shouldSpeakReply) speak(completedAnswer)
@@ -1317,11 +1376,13 @@ function App() {
         await loadPendingMcpAction()
       }
       if (!skipChatMessage && completedAnswer.trim()) {
+        const answerCreatedAt = new Date().toISOString()
         setMessages((current) => [...current, {
           id: Date.now() + 1,
           role: 'assistant',
           text: completedAnswer,
-          time: formatMessageTime(),
+          time: formatMessageTime(answerCreatedAt),
+          createdAt: answerCreatedAt,
         }])
         if (shouldSpeakReply) speak(completedAnswer)
         loadChatSessions().catch(() => {})
@@ -1809,6 +1870,7 @@ function App() {
                 <span className="section-label">{activeSession?.shared ? 'SHARED SESSION' : 'PRIVATE SESSION'}</span>
                 <strong>{activeSession?.title || 'New chat'}</strong>
               </div>
+              {sessionDayLabel && <span className="session-day-label">{sessionDayLabel}</span>}
               <div className="session-collaboration-actions">
                 <button type="button" className="session-members-button" onClick={() => { setMembersOpen((open) => !open); loadParticipants().catch((error) => setApiError(error.message)) }} title="Manage members" aria-label="Manage members">
                   {participants.length > 1 ? <span className="participant-avatars">{participants.slice(0, 3).map((participant) => participant.picture ? <img key={participant.user_id} src={participant.picture} alt="" referrerPolicy="no-referrer" /> : <i key={participant.user_id}>{participant.name?.trim()?.charAt(0)?.toUpperCase() || 'M'}</i>)}</span> : <Users size={17} />}
@@ -1874,7 +1936,11 @@ function App() {
               </div>
             </section>}
             {!activeSessionIsEmpty && messages.map((message) => (
-              <article className={`message ${message.role}`} key={message.id}>
+              <article
+                className={`message ${message.role}`}
+                key={message.id}
+                {...(message.role !== 'system' && message.createdAt ? { 'data-message-day': formatMessageDay(message.createdAt) } : {})}
+              >
                 {message.role === 'system' ? <p className="system-message"><span className="system-message-pulse" aria-hidden="true" />{message.text}</p> : <>
                 {message.role === 'assistant' && (
                   <div className="assistant-avatar"><Logo /></div>
