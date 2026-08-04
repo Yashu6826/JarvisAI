@@ -20,6 +20,8 @@ except ImportError:
 
 INPUT_LANGUAGE = get_config("INPUT_LANGUAGE", "en")
 VOSK_MODEL_PATH = Path(get_config("VOSK_MODEL_PATH", "models/vosk-model-small-en-us-0.15"))
+if not VOSK_MODEL_PATH.is_absolute():
+    VOSK_MODEL_PATH = Path(__file__).resolve().parent / VOSK_MODEL_PATH
 VOSK_SAMPLE_RATE = int(get_config("VOSK_SAMPLE_RATE", "16000"))
 VOSK_LISTEN_SECONDS = float(get_config("VOSK_LISTEN_SECONDS", "12"))
 VOSK_INPUT_DEVICE = get_config("VOSK_INPUT_DEVICE", "").strip()

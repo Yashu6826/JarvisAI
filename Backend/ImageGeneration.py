@@ -12,7 +12,7 @@ from PIL import Image
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
 env_vars = dotenv_values(ENV_PATH)
 SD_WEBUI_BASE_URL = env_vars.get("SD_WEBUI_BASE_URL", "http://127.0.0.1:7860").rstrip("/")

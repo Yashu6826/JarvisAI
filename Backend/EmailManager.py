@@ -25,7 +25,7 @@ from Backend.LLMProvider import LMSTUDIO_MODEL, LocalLLMUnavailable, generate_te
 
 
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "Data"
 EMAIL_RECORDS_PATH = DATA_DIR / "PendingEmails.json"
 GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"

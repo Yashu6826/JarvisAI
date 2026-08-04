@@ -9,7 +9,12 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
 
-    project_python = Path(__file__).resolve().parent / ".venv" / "Scripts" / "python.exe"
+    backend_root = Path(__file__).resolve().parent
+    project_root = backend_root.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    project_python = project_root / ".venv" / "Scripts" / "python.exe"
     if (
         project_python.exists()
         and os.environ.get("NEXA_PROJECT_PYTHON") != "1"
@@ -21,7 +26,7 @@ if __name__ == "__main__":
 
     import uvicorn
 
-    from WebApp import app as nexa_app
+    from Backend.WebApp import app as nexa_app
 
     uvicorn.run(nexa_app, host="127.0.0.1", port=8000)
     raise SystemExit
@@ -58,6 +63,7 @@ import os
 import logging
 
 # Configure logging
+BACKEND_ROOT = os.path.dirname(os.path.abspath(__file__))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -69,7 +75,7 @@ Functions = ["open", "close", "system", "content"]
 subprocess_list=[]
 
 def ShowDefaultChatIfNoChats():
-    chatlog_path = os.path.abspath(os.path.join("Data", "ChatLog.json"))
+    chatlog_path = os.path.join(BACKEND_ROOT, "Data", "ChatLog.json")
     database_path = TempDirectoryPath('Database.data')
     responses_path = TempDirectoryPath('Responses.data')
 
@@ -110,7 +116,7 @@ def ShowDefaultChatIfNoChats():
         logger.error(f"Error in ShowDefaultChatIfNoChats: {e}")
 
 def ReadChatLogJson():
-    chatlog_path = os.path.abspath(os.path.join("Data", "ChatLog.json"))
+    chatlog_path = os.path.join(BACKEND_ROOT, "Data", "ChatLog.json")
     logger.info(f"Reading ChatLog.json from: {chatlog_path}")
     try:
         with open(chatlog_path, 'r', encoding='utf-8') as file:
@@ -249,7 +255,7 @@ def MainExecution():
                 file.write(f"{ImageGenerationQuery},True")
             
             try:
-                image_gen_path = os.path.abspath(os.path.join("Backend", "ImageGeneration.py"))
+                image_gen_path = os.path.join(BACKEND_ROOT, "ImageGeneration.py")
                 logging.info(f"Starting subprocess: {sys.executable} {image_gen_path}")
                 p1 = subprocess.Popen([sys.executable, image_gen_path], shell=False)
                 subprocess_list.append(p1)

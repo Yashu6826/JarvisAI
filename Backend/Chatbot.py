@@ -33,7 +33,7 @@ Answer only the current user question. Do not invent appointments, reminders,
 schedules, prior events, or personal details unless the user explicitly gives them.
 """
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 CHAT_LOG_PATH = ROOT / "Data" / "ChatLog.json"
 SESSION_DATA_DIR = ROOT / "Data" / "Sessions"
 THINKING_SUMMARY_ENABLED = get_config("THINKING_SUMMARY_ENABLED", "true").lower() == "true"

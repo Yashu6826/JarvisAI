@@ -14,13 +14,17 @@ from pathlib import Path
 from urllib.parse import urlencode
 import requests
 
+BACKEND_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = BACKEND_ROOT.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 
 def _ensure_project_python() -> None:
     """Restart direct launches with the project's dependency environment."""
     if os.environ.get("NEXA_PROJECT_PYTHON") == "1":
         return
-    project_root = Path(__file__).resolve().parent
-    project_python = project_root / ".venv" / "Scripts" / "python.exe"
+    project_python = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
     if not project_python.exists():
         return
     if Path(sys.executable).resolve().as_posix().lower() == project_python.resolve().as_posix().lower():
@@ -110,8 +114,8 @@ from Backend.MongoStore import (
 )
 
 
-ROOT = Path(__file__).resolve().parent
-FRONTEND_DIST = ROOT / "Jarvis Frontend" / "dist"
+ROOT = BACKEND_ROOT
+FRONTEND_DIST = PROJECT_ROOT / "Jarvis Frontend" / "dist"
 microphone_lock = threading.Lock()
 _chat_locks_guard = threading.Lock()
 _chat_locks: dict[str, threading.Lock] = {}

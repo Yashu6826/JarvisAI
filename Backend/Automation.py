@@ -10,7 +10,7 @@ from urllib.parse import quote_plus, urlparse
 from Backend.LLMProvider import LMSTUDIO_MODEL, LocalLLMUnavailable, generate_text
 
 logger = logging.getLogger(__name__)
-DATA_DIR = Path("Data")
+DATA_DIR = Path(__file__).resolve().parent / "Data"
 DATA_DIR.mkdir(exist_ok=True)
 
 
