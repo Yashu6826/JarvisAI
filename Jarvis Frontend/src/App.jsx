@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { CircleHelp, CircleUserRound, Command, Copy, Crown, FileText, History, Link2, ListTodo, Plus, Reply, Search, Share2, Sparkles, Trash2, UserMinus, Users, X } from 'lucide-react'
+import { CircleHelp, Command, Copy, Crown, FileText, History, Link2, ListTodo, Plus, Reply, Search, Share2, Sparkles, Trash2, UserMinus, Users, X } from 'lucide-react'
 import Particles, { ParticlesProvider } from '@tsparticles/react'
 import { loadSlim } from '@tsparticles/slim'
 import './App.css'
@@ -23,7 +23,7 @@ const suggestions = [
   { label: 'Send an email', icon: Command },
 ]
 
-const API_BASE = import.meta.env.VITE_API_URL || ''
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
 const LOCATION_CACHE_PREFIX = 'nexa.location.'
 const LOCATION_CACHE_TTL = 1000 * 60 * 30
 const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
@@ -575,7 +575,7 @@ function App() {
   const [micError, setMicError] = useState('')
   const [apiError, setApiError] = useState('')
   const [isOnline, setIsOnline] = useState(false)
-  const [voiceReplies, setVoiceReplies] = useState(true)
+  const [voiceReplies] = useState(true)
   const [thinkingStatus, setThinkingStatus] = useState('')
   const [thinkingDetail, setThinkingDetail] = useState('')
   const [thinkingEvents, setThinkingEvents] = useState([])
@@ -1566,13 +1566,13 @@ function App() {
   useEffect(() => {
     if (!user) {
       locationPromptedRef.current = ''
-      setBrowserLocation({
+      const resetTimer = window.setTimeout(() => setBrowserLocation({
         status: 'idle',
         location: null,
         error: '',
         updatedAt: 0,
-      })
-      return
+      }), 0)
+      return () => window.clearTimeout(resetTimer)
     }
     const key = userLocationCacheKey(user)
     if (!key || locationPromptedRef.current === key) return
@@ -1996,6 +1996,7 @@ function App() {
                     <span className="thinking-pulse"><i /><i /><i /></span>
                     <span>{thinkingStatus || 'Thinking'}</span>
                   </div>
+                  {thinkingDetail && <p className="thinking-detail">{thinkingDetail}</p>}
                   <div className="agent-steps-in-chat" aria-label="Current agent action">
                     <div className="agent-step">
                       <span className="agent-step-orb" aria-hidden="true" />

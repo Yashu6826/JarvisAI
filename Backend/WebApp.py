@@ -166,6 +166,14 @@ def _app_base_url() -> str:
     return get_config("APP_BASE_URL", "http://localhost:8000").rstrip("/")
 
 
+def _cookie_secure_default() -> bool:
+    return bool(os.getenv("VERCEL"))
+
+
+def _cookie_samesite_default() -> str:
+    return "none" if _cookie_secure_default() else "lax"
+
+
 app = FastAPI(title="Nexa API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -175,7 +183,7 @@ app.add_middleware(
     ),
     # Vite chooses the next free development port, so permit loopback ports
     # without broadening CORS access to non-local origins.
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1):\d+",
+    allow_origin_regex=get_config("CORS_ALLOWED_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1):\d+"),
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"],
@@ -274,7 +282,14 @@ def _authenticated_user(request: Request) -> dict:
 
 
 def _set_auth_cookie(response: Response, token: str) -> None:
-    response.set_cookie(AUTH_COOKIE, token, httponly=True, samesite="lax", secure=get_config("AUTH_COOKIE_SECURE", "false").lower() == "true", max_age=60 * 60 * 24 * 30)
+    response.set_cookie(
+        AUTH_COOKIE,
+        token,
+        httponly=True,
+        samesite=get_config("AUTH_COOKIE_SAMESITE", _cookie_samesite_default()).lower(),
+        secure=get_config("AUTH_COOKIE_SECURE", "true" if _cookie_secure_default() else "false").lower() == "true",
+        max_age=60 * 60 * 24 * 30,
+    )
 
 
 def _require_chat_session(request: Request, session_id: str) -> dict:
@@ -303,8 +318,8 @@ def _set_google_session_cookie(response: Response, session_id: str) -> None:
         SESSION_COOKIE,
         session_id,
         httponly=True,
-        samesite="lax",
-        secure=get_config("GOOGLE_OAUTH_COOKIE_SECURE", "false").lower() == "true",
+        samesite=get_config("GOOGLE_OAUTH_COOKIE_SAMESITE", _cookie_samesite_default()).lower(),
+        secure=get_config("GOOGLE_OAUTH_COOKIE_SECURE", "true" if _cookie_secure_default() else "false").lower() == "true",
         max_age=60 * 60 * 24 * 180,
     )
 
