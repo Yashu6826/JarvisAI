@@ -199,7 +199,7 @@ def extract_pdf_pages(pdf_bytes: bytes) -> list[ExtractedPage]:
     try:
         from pypdf import PdfReader
     except ImportError as exc:
-        raise PDFQAError("Install pypdf first: python -m pip install -r Requirements.txt") from exc
+        raise PDFQAError("Install pypdf first: python -m pip install -r requirements.txt") from exc
 
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))

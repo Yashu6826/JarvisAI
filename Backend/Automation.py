@@ -8,10 +8,9 @@ from pathlib import Path
 from urllib.parse import quote_plus, urlparse
 
 from Backend.LLMProvider import LMSTUDIO_MODEL, LocalLLMUnavailable, generate_text
+from Backend.Paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
-DATA_DIR = Path(__file__).resolve().parent / "Data"
-DATA_DIR.mkdir(exist_ok=True)
 
 
 def _clean_open_target(target: str) -> str:

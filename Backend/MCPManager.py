@@ -21,10 +21,10 @@ from Backend.GoogleOAuth import (
     google_mcp_connected,
     google_mcp_header,
 )
+from Backend.Paths import DATA_DIR
 
 
 ROOT = Path(__file__).resolve().parent
-DATA_DIR = ROOT / "Data"
 DEFAULT_CONFIG_PATH = ROOT / ".mcp.json"
 PENDING_ACTIONS_PATH = DATA_DIR / "PendingMCPActions.json"
 _APPROVAL_BYPASS = contextvars.ContextVar("mcp_approval_bypass", default=False)
@@ -224,7 +224,7 @@ def mcp_runtime_diagnostics() -> dict[str, Any]:
         if "RequestContext" in raw_message or "mcp.shared.context" in raw_message:
             message = (
                 "MCP dependency mismatch. Run NEXA with .venv\\Scripts\\python.exe "
-                "or reinstall Requirements.txt in the active environment."
+                "or reinstall requirements.txt in the active environment."
             )
         else:
             message = raw_message

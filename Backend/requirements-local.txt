@@ -1,0 +1,7 @@
+-r requirements.txt
+AppOpener
+keyboard
+PyQt5
+pyttsx3
+sounddevice
+vosk

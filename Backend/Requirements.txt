@@ -1,14 +1,8 @@
 python-dotenv
-AppOpener
 pillow
 requests
 beautifulsoup4
 pypdf
-keyboard
-PyQt5
-pyttsx3
-sounddevice
-vosk
 fastapi
 python-multipart
 uvicorn[standard]

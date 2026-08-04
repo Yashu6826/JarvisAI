@@ -59,7 +59,7 @@ def QueryModifier(query: str) -> str:
 def _load_model():
     global _model
     if Model is None or sd is None:
-        raise RuntimeError("Install the local speech packages from Requirements.txt.")
+        raise RuntimeError("Install the local speech packages from requirements.txt.")
     if not VOSK_MODEL_PATH.is_dir():
         raise RuntimeError(
             f"Offline Vosk model not found at '{VOSK_MODEL_PATH}'. "
