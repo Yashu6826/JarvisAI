@@ -1,0 +1,115 @@
+2026-08-01 02:21:36,035 INFO request.start query_chars=32 has_browser_location=True location={'latitude': 13.089398485389287, 'longitude': 77.6315374023375}
+2026-08-01 02:21:36,808 INFO tools.available=get_capabilities,research_web,search_web,read_webpage,open_website,open_application,close_application,control_volume,control_brightness,get_system_specs,get_power_and_wifi_status,answer_owner_profile,gmail_search_messages,gmail_read_message,google_drive_search_files,google_calendar_list_events,google_calendar_list_calendars,maps_search_places,maps_geocode,maps_get_directions,draft_email,send_email,create_document,add_task,get_tasks,complete_task,remove_task
+2026-08-01 02:21:42,874 INFO perception.attempt=1 valid_plan=True reason=
+2026-08-01 02:21:42,874 INFO perception.plan intent=find nearby clubs tools=maps_search_places max_calls=1 workflow=Search for highly rated nightclubs near latitude 13.089398, longitude 77.631537.
+2026-08-01 02:21:42,875 INFO tools.selected=maps_search_places
+2026-08-01 02:21:43,730 INFO model.invoke messages=2 tools=maps_search_places
+2026-08-01 02:21:55,565 INFO model.response tool_calls=maps_search_places text_chars=0
+2026-08-01 02:21:55,605 INFO geoapify.request method=GET path=/v2/places params={'categories': 'catering.bar', 'filter': 'circle:77.631537,13.089398,5000', 'bias': 'proximity:77.631537,13.089398', 'limit': 5}
+2026-08-01 02:21:56,138 INFO geoapify.response path=/v2/places status=200 bytes=5982
+2026-08-01 02:21:56,139 INFO geoapify.payload path=/v2/places feature_count=5 top_level_keys=type,features
+2026-08-01 02:21:56,148 INFO tool.result name=maps_search_places ok=True keys=ok,query,origin,scope,category,places,result_count,notice error=
+2026-08-01 02:21:56,174 INFO model.invoke messages=4 tools=maps_search_places
+2026-08-01 02:22:14,645 INFO model.response tool_calls= text_chars=731
+2026-08-01 03:00:37,372 INFO geoapify.destination scope=local_200km empty_result; retrying_global=true
+2026-08-01 03:00:37,373 INFO geoapify.destination scope=global selected={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963}
+2026-08-01 03:00:37,373 INFO geoapify.destination scope=local_200km selected={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963}
+2026-08-01 03:00:37,373 INFO geoapify.route.resolve origin={'latitude': 13.05, 'longitude': 77.6, 'formatted': 'Current browser location'} destination={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963} mode=drive
+2026-08-01 03:00:37,374 WARNING geoapify.places scope=local_200000m error=Geoapify is not configured. Add GEOAPIFY_API_KEY to the project's .env file.; retrying_global=true
+2026-08-02 00:19:49,953 INFO request.start query_chars=20 has_browser_location=True location={'latitude': 13.089410118928464, 'longitude': 77.63161491315867}
+2026-08-02 00:19:50,965 INFO tools.available=get_capabilities,research_web,search_web,read_webpage,open_website,open_application,close_application,control_volume,control_brightness,get_system_specs,get_power_and_wifi_status,answer_owner_profile,gmail_search_messages,gmail_read_message,google_drive_search_files,google_calendar_list_events,google_calendar_list_calendars,maps_search_places,maps_geocode,maps_get_directions,draft_email,send_email,create_document,add_task,get_tasks,complete_task,remove_task
+2026-08-02 00:19:57,574 INFO perception.attempt=1 valid_plan=True reason=
+2026-08-02 00:19:57,574 INFO perception.plan intent=clarify_request tools= max_calls=1 workflow=Ask the user to clarify the request 'Except on where you' as it is ambiguous and lacks a clear instruction.
+2026-08-02 00:19:57,574 INFO tools.selected=
+2026-08-02 00:19:58,267 INFO model.invoke messages=2 tools=
+2026-08-02 00:20:24,097 INFO model.response tool_calls= text_chars=162
+2026-08-02 00:40:19,133 INFO request.start query_chars=23 has_browser_location=True location={'latitude': 13.08940660389011, 'longitude': 77.6315536219826}
+2026-08-02 00:40:19,624 INFO tools.available=get_capabilities,research_web,search_web,read_webpage,open_website,open_application,close_application,control_volume,control_brightness,get_system_specs,get_power_and_wifi_status,answer_owner_profile,gmail_search_messages,gmail_read_message,google_drive_search_files,google_calendar_list_events,google_calendar_list_calendars,maps_search_places,maps_geocode,maps_get_directions,draft_email,send_email,create_document,add_task,get_tasks,complete_task,remove_task
+2026-08-02 00:40:27,688 INFO perception.attempt=1 valid_plan=True reason=
+2026-08-02 00:40:27,689 INFO perception.plan intent=get_aqi_near_user tools=research_web max_calls=1 workflow=Research the current Air Quality Index (AQI) for the location at latitude 13.089407, longitude 77.631554.
+2026-08-02 00:40:27,689 INFO tools.selected=research_web
+2026-08-02 00:40:27,846 INFO model.invoke messages=2 tools=research_web
+2026-08-02 00:40:31,539 INFO model.response tool_calls=research_web text_chars=0
+2026-08-02 00:40:39,610 INFO tool.result name=research_web ok=True keys=ok,query,searches,source_count,sources,errors,policy error=
+2026-08-02 00:40:39,637 INFO model.invoke messages=3 tools=research_web
+2026-08-02 00:40:48,718 INFO model.response tool_calls=research_web text_chars=175
+2026-08-02 00:40:48,718 WARNING web_tool_limit.reached tool=research_web current=2 limit=1
+2026-08-02 00:40:48,718 INFO web_tool_limit.finalizing
+2026-08-02 00:40:48,718 INFO finalizer.invoke tool_results=1
+2026-08-02 00:40:57,695 INFO finalizer.response text_chars=356
+2026-08-02 00:41:23,833 INFO request.start query_chars=23 has_browser_location=True location={'latitude': 13.08940660389011, 'longitude': 77.6315536219826}
+2026-08-02 00:41:24,358 INFO tools.available=get_capabilities,research_web,search_web,read_webpage,open_website,open_application,close_application,control_volume,control_brightness,get_system_specs,get_power_and_wifi_status,answer_owner_profile,gmail_search_messages,gmail_read_message,google_drive_search_files,google_calendar_list_events,google_calendar_list_calendars,maps_search_places,maps_geocode,maps_get_directions,draft_email,send_email,create_document,add_task,get_tasks,complete_task,remove_task
+2026-08-02 00:41:32,144 INFO perception.attempt=1 valid_plan=True reason=
+2026-08-02 00:41:32,145 INFO perception.plan intent=get_aqi_near_user tools=research_web max_calls=1 workflow=Research the current Air Quality Index (AQI) for the location at latitude 13.089407, longitude 77.631554.
+2026-08-02 00:41:32,145 INFO tools.selected=research_web
+2026-08-02 00:41:32,451 INFO model.invoke messages=2 tools=research_web
+2026-08-02 00:41:52,081 INFO model.response tool_calls=research_web text_chars=67
+2026-08-02 00:41:57,426 INFO tool.result name=research_web ok=True keys=ok,query,searches,source_count,sources,errors,policy error=
+2026-08-02 00:41:57,503 INFO model.invoke messages=3 tools=research_web
+2026-08-02 00:42:04,461 INFO model.response tool_calls=research_web text_chars=155
+2026-08-02 00:42:04,461 WARNING web_tool_limit.reached tool=research_web current=2 limit=1
+2026-08-02 00:42:04,461 INFO web_tool_limit.finalizing
+2026-08-02 00:42:04,462 INFO finalizer.invoke tool_results=1
+2026-08-02 00:42:06,730 INFO finalizer.response text_chars=263
+2026-08-02 00:44:54,544 INFO live_data_plan.enforced intent=live weather and air quality tool=get_weather_and_air_quality
+2026-08-02 00:46:11,268 INFO request.start query_chars=23 has_browser_location=True location={'latitude': 13.08940660389011, 'longitude': 77.6315536219826}
+2026-08-02 00:46:11,803 INFO tools.available=get_capabilities,research_web,search_web,read_webpage,open_website,open_application,close_application,control_volume,control_brightness,get_system_specs,get_power_and_wifi_status,answer_owner_profile,gmail_search_messages,gmail_read_message,google_drive_search_files,google_calendar_list_events,google_calendar_list_calendars,maps_search_places,maps_geocode,maps_get_directions,get_weather_and_air_quality,check_holiday_schedule,convert_currency,draft_email,send_email,create_document,add_task,get_tasks,complete_task,remove_task
+2026-08-02 00:46:16,355 INFO perception.attempt=1 valid_plan=True reason=
+2026-08-02 00:46:16,358 INFO live_data_plan.enforced intent=live weather and air quality tool=get_weather_and_air_quality
+2026-08-02 00:46:16,358 INFO perception.plan intent=live weather and air quality tools=get_weather_and_air_quality max_calls=1 workflow=Use the trusted browser coordinates to get current weather and AQI. | Answer only from the returned live-data result.
+2026-08-02 00:46:16,358 INFO tools.selected=get_weather_and_air_quality
+2026-08-02 00:46:16,630 INFO model.invoke messages=2 tools=get_weather_and_air_quality
+2026-08-02 00:46:31,931 INFO model.response tool_calls=get_weather_and_air_quality text_chars=0
+2026-08-02 00:46:34,105 INFO tool.result name=get_weather_and_air_quality ok=True keys=ok,location,observed_at,weather,air_quality,forecast,sources error=
+2026-08-02 00:46:34,211 INFO model.invoke messages=4 tools=get_weather_and_air_quality
+2026-08-02 00:46:39,574 INFO model.response tool_calls= text_chars=73
+2026-08-02 00:47:35,556 INFO request.start query_chars=60 has_browser_location=True location={'latitude': 13.08940660389011, 'longitude': 77.6315536219826}
+2026-08-02 00:47:36,211 INFO tools.available=get_capabilities,research_web,search_web,read_webpage,open_website,open_application,close_application,control_volume,control_brightness,get_system_specs,get_power_and_wifi_status,answer_owner_profile,gmail_search_messages,gmail_read_message,google_drive_search_files,google_calendar_list_events,google_calendar_list_calendars,maps_search_places,maps_geocode,maps_get_directions,get_weather_and_air_quality,check_holiday_schedule,convert_currency,draft_email,send_email,create_document,add_task,get_tasks,complete_task,remove_task
+2026-08-02 00:47:50,407 INFO perception.attempt=1 valid_plan=True reason=
+2026-08-02 00:47:50,410 INFO perception.plan intent=get_weather_and_forecast tools=get_weather_and_air_quality max_calls=1 workflow=Get the current weather and forecast for the user's location using the provided latitude 13.089407 and longitude 77.631554.
+2026-08-02 00:47:50,410 INFO tools.selected=get_weather_and_air_quality
+2026-08-02 00:47:50,611 INFO model.invoke messages=2 tools=get_weather_and_air_quality
+2026-08-02 00:47:59,476 INFO model.response tool_calls=get_weather_and_air_quality text_chars=0
+2026-08-02 00:48:01,360 INFO tool.result name=get_weather_and_air_quality ok=True keys=ok,location,observed_at,weather,air_quality,forecast,sources error=
+2026-08-02 00:48:01,438 INFO model.invoke messages=4 tools=get_weather_and_air_quality
+2026-08-02 00:48:11,776 INFO model.response tool_calls= text_chars=468
+2026-08-02 00:49:10,523 INFO request.start query_chars=32 has_browser_location=True location={'latitude': 13.08940660389011, 'longitude': 77.6315536219826}
+2026-08-02 00:49:11,207 INFO tools.available=get_capabilities,research_web,search_web,read_webpage,open_website,open_application,close_application,control_volume,control_brightness,get_system_specs,get_power_and_wifi_status,answer_owner_profile,gmail_search_messages,gmail_read_message,google_drive_search_files,google_calendar_list_events,google_calendar_list_calendars,maps_search_places,maps_geocode,maps_get_directions,get_weather_and_air_quality,check_holiday_schedule,convert_currency,draft_email,send_email,create_document,add_task,get_tasks,complete_task,remove_task
+2026-08-02 00:49:20,253 INFO perception.attempt=1 valid_plan=True reason=
+2026-08-02 00:49:20,253 INFO perception.plan intent=get_weather_at_location tools=maps_geocode,get_weather_and_air_quality max_calls=2 workflow=Geocode the location 'burhanpur' to get its coordinates. | Get the current weather and air quality for the geocoded coordinates.
+2026-08-02 00:49:20,253 INFO tools.selected=maps_geocode,get_weather_and_air_quality
+2026-08-02 00:49:20,494 INFO model.invoke messages=2 tools=maps_geocode,get_weather_and_air_quality
+2026-08-02 00:49:24,116 INFO model.response tool_calls=maps_geocode text_chars=0
+2026-08-02 00:49:24,168 INFO geoapify.request method=GET path=/v1/geocode/search params={'text': 'burhanpur', 'limit': 5}
+2026-08-02 00:49:24,855 INFO geoapify.response path=/v1/geocode/search status=200 bytes=6465
+2026-08-02 00:49:24,855 INFO geoapify.payload path=/v1/geocode/search feature_count=5 top_level_keys=type,features,query
+2026-08-02 00:49:24,857 INFO geoapify.geocode scope=global query='burhanpur' result_count=5 first_result={'name': 'Burhanpur', 'formatted': 'Burhanpur, MP, India', 'latitude': 21.3118839, 'longitude': 76.2291992, 'country': 'India', 'city': 'Burhanpur'}
+2026-08-02 00:49:24,857 INFO tool.result name=maps_geocode ok=True keys=ok,query,scope,places,result_count error=
+2026-08-02 00:49:24,887 INFO model.invoke messages=4 tools=maps_geocode,get_weather_and_air_quality
+2026-08-02 00:49:45,812 INFO model.response tool_calls=get_weather_and_air_quality text_chars=223
+2026-08-02 00:49:47,572 INFO tool.result name=get_weather_and_air_quality ok=True keys=ok,location,observed_at,weather,air_quality,forecast,sources error=
+2026-08-02 00:49:47,601 INFO model.invoke messages=6 tools=maps_geocode,get_weather_and_air_quality
+2026-08-02 00:51:08,571 INFO model.response tool_calls= text_chars=652
+2026-08-02 18:08:09,564 INFO request.start query_chars=30 has_browser_location=True location={'latitude': 13.089421, 'longitude': 77.63166683333333}
+2026-08-02 18:08:10,979 INFO tools.available=get_capabilities,research_web,search_web,read_webpage,open_website,open_application,close_application,control_volume,control_brightness,get_system_specs,get_power_and_wifi_status,answer_owner_profile,gmail_search_messages,gmail_read_message,google_drive_search_files,google_calendar_list_events,google_calendar_list_calendars,maps_search_places,maps_geocode,maps_get_directions,get_weather_and_air_quality,check_holiday_schedule,convert_currency,draft_email,send_email,create_document,add_task,get_tasks,complete_task,remove_task
+2026-08-02 18:08:15,791 INFO perception.attempt=1 valid_plan=True reason=
+2026-08-02 18:08:15,792 INFO perception.plan intent=find_recent_messages_from_yash tools=gmail_search_messages max_calls=1 workflow=Search Gmail for recent messages from 'Yash' to understand the context of the conversation.
+2026-08-02 18:08:15,792 INFO tools.selected=gmail_search_messages
+2026-08-02 18:08:17,471 INFO model.invoke messages=2 tools=gmail_search_messages
+2026-08-02 18:08:24,144 INFO model.response tool_calls=gmail_search_messages text_chars=0
+2026-08-02 18:08:26,479 INFO tool.result name=gmail_search_messages ok=True keys=ok,messages,result_count error=
+2026-08-02 18:08:26,538 INFO model.invoke messages=4 tools=gmail_search_messages
+2026-08-02 18:08:33,708 INFO model.response tool_calls=gmail_search_messages text_chars=0
+2026-08-02 18:08:37,417 INFO tool.result name=gmail_search_messages ok=True keys=ok,messages,result_count error=
+2026-08-02 18:08:37,442 INFO model.invoke messages=3 tools=gmail_search_messages
+2026-08-02 18:08:48,400 INFO model.response tool_calls=gmail_search_messages text_chars=89
+2026-08-02 18:08:48,857 INFO tool.result name=gmail_search_messages ok=True keys=ok,messages,result_count error=
+2026-08-02 18:08:48,859 ERROR request.error type=GraphRecursionError
+Traceback (most recent call last):
+  File "C:\Users\Gupta\Desktop\jarvis\Backend\JarvisAgent.py", line 723, in AgentStream
+    async for mode, chunk in graph.astream(
+  File "C:\Users\Gupta\Desktop\jarvis\.venv\lib\site-packages\langgraph\pregel\main.py", line 3492, in astream
+    raise GraphRecursionError(msg)
+langgraph.errors.GraphRecursionError: Recursion limit of 6 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
+2026-08-02 18:18:16,974 INFO perception.direct_reply_context intent=reply to chat message tools=

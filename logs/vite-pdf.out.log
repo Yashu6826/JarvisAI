@@ -1,0 +1,19 @@
+
+> nexa-frontend@0.0.0 dev
+> vite --host 127.0.0.1
+
+Port 5173 is in use, trying another one...
+
+  [32m[1mVITE[22m v8.1.5[39m  [2mready in [0m[1m1018[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5174[22m/[39m
+[2m2:59:38 am[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m2:59:39 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing d[2m2:59:39 am[22m [36m[1m[vite][22m[39[2m2:59:39 am[22m [36m[1m[vite][22m[39m server restarted.
+[2m2:59:40 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [optimizer] bundling dependencies...
+[2m2:59:58 am[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m2:59:58 am[22m [36m[1m[vite][22m[39m server restarted.
+[2m3:00:07 am[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting ser[2m3:00:07 [2m3:00:07 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing d[2m3:00:07 am[22m [36m[1m[vite][22m[39[2m3:00:07 am[22m [36m[1m[vite][22m[39m server restarted.
+[2m3:00:08 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [optimizer] bun[2m3:00:09 am[22m [[2m3:03:37 am[22m [36m[1m[vite][22m[39m [32m../.env changed, restarting server...[39m
+[2m3:03:38 am[22m [36m[1m[vite][22m[39m server restarted.
+estarting server...[39m
+[2m3:03:38 am[22m [36m[1m[vite][22m[39m server restarted.

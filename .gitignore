@@ -1,4 +1,11 @@
-_pycache_/
-.env/
+__pycache__/
+*.py[cod]
 .venv/
 .env
+Data/GoogleConnections.json
+Data/GoogleOAuthStates.json
+Data/PendingEmails.json
+Data/PendingMCPActions.json
+Data/Sessions/
+Data/OwnerRAG/
+Data/speech.mp3

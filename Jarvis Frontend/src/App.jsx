@@ -1,0 +1,2436 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { CircleHelp, CircleUserRound, Command, Copy, Crown, FileText, History, Link2, ListTodo, Plus, Reply, Search, Share2, Sparkles, Trash2, UserMinus, Users, X } from 'lucide-react'
+import Particles, { ParticlesProvider } from '@tsparticles/react'
+import { loadSlim } from '@tsparticles/slim'
+import './App.css'
+
+const starterMessages = [
+  {
+    id: 1,
+    role: 'assistant',
+    text: "I'm online and ready. What can I help you with?",
+    time: 'Now',
+  },
+]
+
+const suggestions = [
+  { label: 'Research Tesla stock', icon: Search },
+  { label: 'Find restaurants near me', icon: Sparkles },
+  { label: 'Summarize a PDF document', icon: FileText },
+  { label: 'Send an email', icon: Command },
+]
+
+const API_BASE = import.meta.env.VITE_API_URL || ''
+const LOCATION_CACHE_PREFIX = 'nexa.location.'
+const LOCATION_CACHE_TTL = 1000 * 60 * 30
+const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
+
+const locationRequestPattern = /\b(?:near me|around me|nearby|closest|nearest|from me|where am i|my location|directions?|route|distance|how far|how long|travel time|away|local|near my|restaurants?|cafes?|coffee shops?|hotels?|attractions?|pharmacies|hospitals?|gas stations?|petrol pumps?|atms?|parking|weather|forecast|traffic|places?)\b/i
+
+function formatMessageTime(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Just now'
+  return new Intl.DateTimeFormat(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function messageWithDocumentReference(message, id) {
+  const content = String(message?.content || '')
+  const replyTo = message?.reply_to ? {
+    id: String(message.reply_to.id || ''),
+    role: String(message.reply_to.role || ''),
+    text: String(message.reply_to.content || ''),
+    senderName: String(message.reply_to.sender_name || ''),
+    sender_user_id: String(message.reply_to.sender_user_id || ''),
+  } : null
+  const marker = /\n\s*\nDocument:\s*/i
+  const match = marker.exec(content)
+  if (!match) {
+    return {
+      id,
+      role: message.role,
+      text: content,
+      time: formatMessageTime(message.created_at),
+      senderName: message.sender_name,
+      sender_user_id: message.sender_user_id,
+      ...(replyTo ? { replyTo } : {}),
+    }
+  }
+  const documentName = content
+    .slice(match.index + match[0].length)
+    .split(/\s+Document:\s*/i)[0]
+    .trim()
+  return {
+    id,
+    role: message.role,
+    text: content.slice(0, match.index).trim(),
+    documentName,
+    time: formatMessageTime(message.created_at),
+    senderName: message.sender_name,
+    sender_user_id: message.sender_user_id,
+    ...(replyTo ? { replyTo } : {}),
+  }
+}
+
+function replyPreviewFromMessage(message) {
+  if (!message || message.role === 'system') return null
+  const text = String(message.text || '').replace(/\s+/g, ' ').trim()
+  return {
+    id: String(message.id),
+    role: message.role,
+    text: text.slice(0, 180),
+    senderName: message.senderName || '',
+    sender_user_id: message.sender_user_id || '',
+  }
+}
+
+function userLocationCacheKey(user) {
+  const identity = String(user?.id || user?.email || '').trim()
+  return identity ? `${LOCATION_CACHE_PREFIX}${identity}` : ''
+}
+
+function readCachedLocation(user) {
+  const key = userLocationCacheKey(user)
+  if (!key) return null
+  try {
+    const cached = JSON.parse(window.localStorage.getItem(key) || 'null')
+    if (!cached || cached.status !== 'granted' || !cached.location) return cached
+    const freshEnough = Date.now() - Number(cached.updatedAt || 0) < LOCATION_CACHE_TTL
+    return freshEnough ? cached : { ...cached, stale: true }
+  } catch {
+    return null
+  }
+}
+
+function writeCachedLocation(user, value) {
+  const key = userLocationCacheKey(user)
+  if (!key) return
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Location still works for this session even when local storage is disabled.
+  }
+}
+
+function currentBrowserLocation() {
+  if (!window.isSecureContext) {
+    return Promise.resolve({
+      location: null,
+      error: 'Browser location requires http://127.0.0.1:8000, http://localhost:8000, or HTTPS. Open Nexa locally and try again.',
+    })
+  }
+  if (!navigator.geolocation) {
+    return Promise.resolve({
+      location: null,
+      error: 'This browser does not provide location services. Use Chrome or Edge and allow location access.',
+    })
+  }
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => resolve({
+      location: null,
+      error: 'Location request timed out. Check that Windows location services are enabled and try again.',
+    }), 7000)
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        window.clearTimeout(timeout)
+        resolve({
+          location: {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          },
+        })
+      },
+      (error) => {
+        window.clearTimeout(timeout)
+        const message = error?.code === error?.PERMISSION_DENIED
+          ? 'Location permission is blocked for Nexa. Click the location icon beside the browser address bar, allow location, then retry.'
+          : error?.code === error?.POSITION_UNAVAILABLE
+            ? 'Your browser could not determine a location. Enable Windows location services and try again.'
+            : 'Location request timed out. Check that Windows location services are enabled and try again.'
+        resolve({ location: null, error: message })
+      },
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 6500 },
+    )
+  })
+}
+
+function MarkdownLink({ node, ...props }) {
+  void node
+  return <a {...props} target="_blank" rel="noopener noreferrer" />
+}
+
+function MarkdownTable({ node, ...props }) {
+  void node
+  return <div className="markdown-table-wrap"><table {...props} /></div>
+}
+
+const markdownComponents = {
+  a: MarkdownLink,
+  table: MarkdownTable,
+}
+
+function MarkdownMessage({ children, streaming = false }) {
+  return (
+    <div className={`markdown-body ${streaming ? 'live-answer' : ''}`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={markdownComponents}
+        skipHtml
+      >
+        {children}
+      </ReactMarkdown>
+      {streaming && <span className="stream-cursor" aria-hidden="true" />}
+    </div>
+  )
+}
+
+function parseMarkdownTables(text = '') {
+  const lines = text.split('\n')
+  const tables = []
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const headerLine = lines[index].trim()
+    const dividerLine = lines[index + 1].trim()
+    if (!headerLine.includes('|') || !/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(dividerLine)) {
+      continue
+    }
+
+    const headers = splitMarkdownRow(headerLine)
+    const rows = []
+    let cursor = index + 2
+    while (cursor < lines.length && lines[cursor].includes('|') && lines[cursor].trim()) {
+      const cells = splitMarkdownRow(lines[cursor])
+      if (cells.length === headers.length) rows.push(cells)
+      cursor += 1
+    }
+    if (headers.length > 1 && rows.length) {
+      tables.push({ headers, rows })
+      index = cursor - 1
+    }
+  }
+  return tables.slice(0, 3)
+}
+
+function splitMarkdownRow(line) {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.replace(/\*\*/g, '').replace(/`/g, '').trim())
+}
+
+function numericValue(value) {
+  const cleaned = String(value || '').replace(/[$,%]/g, '').replace(/,/g, '').trim()
+  if (!/^[-+]?\d*\.?\d+$/.test(cleaned)) return null
+  return Number(cleaned)
+}
+
+function tableToCsv(table) {
+  const escapeCell = (cell) => `"${String(cell).replace(/"/g, '""')}"`
+  return [table.headers, ...table.rows].map((row) => row.map(escapeCell).join(',')).join('\n')
+}
+
+function chartFromTable(table) {
+  const labelIndex = 0
+  let valueIndex = -1
+  for (let column = 1; column < table.headers.length; column += 1) {
+    const values = table.rows.map((row) => numericValue(row[column])).filter((value) => value !== null)
+    if (values.length >= Math.min(3, table.rows.length)) {
+      valueIndex = column
+      break
+    }
+  }
+  if (valueIndex < 0) return null
+  const points = table.rows
+    .map((row) => ({
+      label: row[labelIndex] || 'Item',
+      value: numericValue(row[valueIndex]),
+    }))
+    .filter((point) => point.value !== null)
+    .slice(0, 8)
+  const max = Math.max(...points.map((point) => Math.abs(point.value)), 0)
+  if (!points.length || max <= 0) return null
+  return {
+    title: `${table.headers[valueIndex]} by ${table.headers[labelIndex]}`,
+    valueLabel: table.headers[valueIndex],
+    points,
+    max,
+  }
+}
+
+function parseResearchSections(text = '') {
+  const lines = text.split('\n')
+  const sections = []
+  let current = null
+  const usefulHeading = /\b(summary|finding|analysis|source|citation|recommendation|pros|cons|risk|timeline|conclusion|report|overview|comparison)\b/i
+
+  for (const line of lines) {
+    const heading = line.match(/^(#{2,3})\s+(.+?)\s*$/)
+    if (heading) {
+      if (current?.content.trim()) sections.push(current)
+      current = { title: heading[2].replace(/[*`]/g, '').trim(), content: '' }
+    } else if (current) {
+      current.content += `${line}\n`
+    }
+  }
+  if (current?.content.trim()) sections.push(current)
+
+  const hasSourceLinks = /\[[^\]]+\]\(https?:\/\/[^)]+\)/.test(text) || /^sources?:/im.test(text)
+  const reportLike = sections.length >= 3 && (sections.some((section) => usefulHeading.test(section.title)) || hasSourceLinks)
+  return reportLike ? sections.slice(0, 6) : []
+}
+
+function AnswerCards({ message }) {
+  const text = message.text || ''
+  const tables = parseMarkdownTables(text)
+  const chart = tables.map(chartFromTable).find(Boolean)
+  const reportSections = parseResearchSections(text)
+  const pdfCitations = message.cards?.pdfCitations || []
+  const document = message.cards?.document || null
+  const [activeReportTab, setActiveReportTab] = useState(0)
+  const [copiedTable, setCopiedTable] = useState('')
+
+  if (!tables.length && !chart && !reportSections.length && !pdfCitations.length) return null
+
+  const copyTable = async (table, key) => {
+    try {
+      await navigator.clipboard.writeText(tableToCsv(table))
+      setCopiedTable(key)
+      window.setTimeout(() => setCopiedTable(''), 1400)
+    } catch {
+      setCopiedTable('')
+    }
+  }
+
+  return (
+    <div className="answer-card-stack">
+      {pdfCitations.length > 0 && (
+        <section className="answer-card citation-card">
+          <div className="answer-card-head">
+            <div>
+              <span>PDF SOURCES</span>
+              <strong>{document?.filename || 'Uploaded PDF'}</strong>
+            </div>
+            {document?.page_count && <em>{document.page_count} pages</em>}
+          </div>
+          <div className="citation-grid">
+            {pdfCitations.slice(0, 6).map((citation) => (
+              <article className="citation-tile" key={`${citation.page}-${citation.chunk_index}`}>
+                <span>Page {citation.page}</span>
+                <p>{citation.preview}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {tables.length > 0 && (
+        <section className="answer-card table-card">
+          <div className="answer-card-head">
+            <div>
+              <span>TABLE VIEW</span>
+              <strong>{tables.length === 1 ? 'Structured data' : `${tables.length} tables found`}</strong>
+            </div>
+          </div>
+          {tables.map((table, tableIndex) => {
+            const key = `table-${message.id}-${tableIndex}`
+            return (
+              <div className="interactive-table-wrap" key={key}>
+                <div className="table-toolbar">
+                  <span>{table.headers.join(' / ')}</span>
+                  <button type="button" onClick={() => copyTable(table, key)}>
+                    {copiedTable === key ? 'Copied' : 'Copy CSV'}
+                  </button>
+                </div>
+                <div className="interactive-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>{table.headers.map((header) => <th key={header}>{header}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {table.rows.map((row, rowIndex) => (
+                        <tr key={`${key}-row-${rowIndex}`}>
+                          {row.map((cell, cellIndex) => <td key={`${key}-${rowIndex}-${cellIndex}`}>{cell}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+        </section>
+      )}
+
+      {chart && (
+        <section className="answer-card chart-card">
+          <div className="answer-card-head">
+            <div>
+              <span>CHART</span>
+              <strong>{chart.title}</strong>
+            </div>
+            <em>{chart.valueLabel}</em>
+          </div>
+          <div className="bar-chart" role="img" aria-label={chart.title}>
+            {chart.points.map((point) => (
+              <div className="bar-row" key={`${point.label}-${point.value}`}>
+                <span>{point.label}</span>
+                <div><i style={{ width: `${Math.max(5, (Math.abs(point.value) / chart.max) * 100)}%` }} /></div>
+                <strong>{point.value}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {reportSections.length > 0 && (
+        <section className="answer-card report-card">
+          <div className="answer-card-head">
+            <div>
+              <span>REPORT VIEW</span>
+              <strong>Section navigator</strong>
+            </div>
+          </div>
+          <div className="report-tabs" role="tablist" aria-label="Report sections">
+            {reportSections.map((section, index) => (
+              <button
+                key={section.title}
+                type="button"
+                className={activeReportTab === index ? 'active' : ''}
+                onClick={() => setActiveReportTab(index)}
+              >
+                {section.title}
+              </button>
+            ))}
+          </div>
+          <div className="report-panel">
+            <MarkdownMessage>{reportSections[activeReportTab]?.content || ''}</MarkdownMessage>
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function Logo() {
+  return (
+    <div className="logo-mark" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </div>
+  )
+}
+
+const initialiseParticles = async (engine) => {
+  await loadSlim(engine)
+}
+
+function AmbientParticles({ id = 'nexa-particles', className = 'ambient-particles', compact = false }) {
+  const palette = compact
+    ? ['#78f2c5', '#9fb5ff']
+    : ['#78f2c5', '#8aa4ff', '#eef7ff']
+  return <ParticlesProvider init={initialiseParticles}><Particles
+    id={id}
+    className={className}
+    options={{
+      background: { color: { value: 'transparent' } },
+      fpsLimit: 50,
+      detectRetina: true,
+      interactivity: {
+        events: {
+          onHover: { enable: !compact, mode: 'bubble' },
+          resize: { enable: true },
+        },
+        modes: {
+          bubble: {
+            distance: 140,
+            duration: 1.8,
+            opacity: 0.55,
+            size: 4,
+          },
+        },
+      },
+      particles: {
+        color: { value: palette },
+        links: { enable: false },
+        move: {
+          enable: true,
+          speed: compact ? 0.22 : 0.34,
+          direction: 'top-right',
+          random: true,
+          straight: false,
+          outModes: { default: 'out' },
+        },
+        number: {
+          density: { enable: !compact, width: 1100, height: 700 },
+          value: compact ? 12 : 42,
+        },
+        opacity: {
+          value: { min: compact ? 0.08 : 0.1, max: compact ? 0.28 : 0.48 },
+          animation: {
+            enable: true,
+            speed: compact ? 0.35 : 0.55,
+            sync: false,
+          },
+        },
+        shadow: {
+          enable: true,
+          color: '#78f2c5',
+          blur: compact ? 5 : 9,
+        },
+        shape: { type: 'circle' },
+        size: {
+          value: { min: compact ? 0.8 : 0.9, max: compact ? 2.2 : 3.8 },
+          animation: {
+            enable: true,
+            speed: compact ? 0.6 : 0.85,
+            sync: false,
+          },
+        },
+      },
+    }}
+  /></ParticlesProvider>
+}
+
+function AuthScreen({ onSignedIn }) {
+  const [mode, setMode] = useState('login')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/${mode === 'login' ? 'login' : 'register'}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ name, email, password }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not sign in.')
+      onSignedIn(data.user)
+    } catch (requestError) {
+      setError(requestError.message || 'Could not sign in.')
+    } finally { setBusy(false) }
+  }
+
+  return <main className="auth-screen"><AmbientParticles /><section className="auth-card">
+    <div className="auth-brand"><Logo /><span>NEXA</span></div>
+    <p className="section-label">PRIVATE WORKSPACE</p>
+    <h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+    <p>Sign in to save and revisit your chat sessions.</p>
+    <button className="google-signin" type="button" onClick={() => window.location.assign(`${API_BASE}/api/auth/google`)}>
+      <span>G</span> Sign in with Google
+    </button>
+    <div className="auth-divider"><span>or</span></div>
+    <form onSubmit={submit} className="auth-form">
+      {mode === 'register' && <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" autoComplete="name" />}
+      <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" type="email" autoComplete="email" required />
+      <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" minLength="8" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required />
+      {error && <p className="auth-error">{error}</p>}
+      <button className="auth-submit" disabled={busy}>{busy ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
+    </form>
+    <button type="button" className="auth-switch" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
+      {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+    </button>
+  </section></main>
+}
+
+function App() {
+  const [messages, setMessages] = useState(starterMessages)
+  const [input, setInput] = useState('')
+  const [isListening, setIsListening] = useState(false)
+  const [isThinking, setIsThinking] = useState(false)
+  const [micError, setMicError] = useState('')
+  const [apiError, setApiError] = useState('')
+  const [isOnline, setIsOnline] = useState(false)
+  const [voiceReplies, setVoiceReplies] = useState(true)
+  const [thinkingStatus, setThinkingStatus] = useState('')
+  const [thinkingDetail, setThinkingDetail] = useState('')
+  const [thinkingEvents, setThinkingEvents] = useState([])
+  const [liveAnswer, setLiveAnswer] = useState('')
+  const [todos, setTodos] = useState([])
+  const [isAddingTodo, setIsAddingTodo] = useState(false)
+  const [todoDraft, setTodoDraft] = useState('')
+  const [todoDueDraft, setTodoDueDraft] = useState('')
+  const [todoBusy, setTodoBusy] = useState(false)
+  const [mcpServers, setMcpServers] = useState([])
+  const [googleServices, setGoogleServices] = useState([])
+  const [capabilities, setCapabilities] = useState({ local: [], google: [] })
+  const [googleActionBusy, setGoogleActionBusy] = useState('')
+  const [pendingEmail, setPendingEmail] = useState(null)
+  const [pendingMcpAction, setPendingMcpAction] = useState(null)
+  const [emailActionBusy, setEmailActionBusy] = useState('')
+  const [mcpActionBusy, setMcpActionBusy] = useState('')
+  const [pendingRecipient, setPendingRecipient] = useState('')
+  const [pendingCc, setPendingCc] = useState('')
+  const [pendingBcc, setPendingBcc] = useState('')
+  const [pdfFile, setPdfFile] = useState(null)
+  const [user, setUser] = useState(null)
+  const [authView, setAuthView] = useState(false)
+  const [chatSessions, setChatSessions] = useState([])
+  const [activeSessionId, setActiveSessionId] = useState('')
+  const [deletingSessionId, setDeletingSessionId] = useState('')
+  const [participants, setParticipants] = useState([])
+  const [sessionRole, setSessionRole] = useState('member')
+  const [membersOpen, setMembersOpen] = useState(false)
+  const [memberBusy, setMemberBusy] = useState('')
+  const [inviteLink, setInviteLink] = useState('')
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [inviteCopied, setInviteCopied] = useState(false)
+  const [replyTarget, setReplyTarget] = useState(null)
+  const [composerHelpOpen, setComposerHelpOpen] = useState(false)
+  const [browserLocation, setBrowserLocation] = useState(() => ({
+    status: 'idle',
+    location: null,
+    error: '',
+    updatedAt: 0,
+  }))
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false)
+  const [rightPanelOpen, setRightPanelOpen] = useState(false)
+  const feedRef = useRef(null)
+  const sessionSocketRef = useRef(null)
+  const membersPanelRef = useRef(null)
+  const composerHelpRef = useRef(null)
+  const captureRef = useRef(null)
+  const todoDraftRef = useRef(null)
+  const pdfInputRef = useRef(null)
+  const locationPromptedRef = useRef('')
+
+  const applyPendingEmail = useCallback((email) => {
+    setPendingEmail(email || null)
+    setPendingRecipient(email?.to?.join(', ') || '')
+    setPendingCc(email?.cc?.join(', ') || '')
+    setPendingBcc(email?.bcc?.join(', ') || '')
+  }, [])
+
+  const loadChatSessions = useCallback(async () => {
+    const response = await fetch(`${API_BASE}/api/chats`, { credentials: 'include' })
+    if (!response.ok) throw new Error('Could not load chat sessions.')
+    const sessions = (await response.json()).sessions || []
+    setChatSessions(sessions)
+    return sessions
+  }, [])
+
+  const createChatSession = useCallback(async () => {
+    const response = await fetch(`${API_BASE}/api/chats`, { method: 'POST', credentials: 'include' })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.detail || 'Could not create a chat.')
+    setChatSessions((current) => [data.session, ...current])
+    setActiveSessionId(data.session.id)
+    setMessages(starterMessages)
+    return data.session
+  }, [])
+
+  const openChatSession = useCallback(async (sessionId) => {
+    const response = await fetch(`${API_BASE}/api/chats/${sessionId}/messages`, { credentials: 'include' })
+    const data = await response.json()
+    if (!response.ok) {
+      const error = new Error(data.detail || 'Could not open this chat.')
+      error.status = response.status
+      throw error
+    }
+    setActiveSessionId(sessionId)
+    setReplyTarget(null)
+    setMessages(data.messages.length
+      ? data.messages.map((message, index) => messageWithDocumentReference(message, `${sessionId}-${index}`))
+      : starterMessages)
+  }, [])
+
+  const loadParticipants = useCallback(async (sessionId = activeSessionId) => {
+    if (!sessionId) return
+    const response = await fetch(`${API_BASE}/api/chats/${sessionId}/participants`, { credentials: 'include' })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.detail || 'Could not load chat members.')
+    setParticipants(data.participants || [])
+    setSessionRole(data.your_role || 'member')
+  }, [activeSessionId])
+
+  const shareChat = useCallback(async () => {
+    if (!activeSessionId || sessionRole !== 'admin') return
+    setMemberBusy('invite')
+    try {
+      const response = await fetch(`${API_BASE}/api/chats/${activeSessionId}/invites`, { method: 'POST', credentials: 'include' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not create an invite.')
+      const link = `${window.location.origin}/join/${data.token}`
+      setInviteLink(link)
+      setInviteCopied(false)
+      setShareDialogOpen(true)
+    } catch (error) {
+      setApiError(error.message || 'Could not copy the invite link.')
+    } finally {
+      setMemberBusy('')
+    }
+  }, [activeSessionId, sessionRole])
+
+  const copyInviteLink = useCallback(async () => {
+    if (!inviteLink) return
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      setInviteCopied(true)
+    } catch {
+      setApiError('Could not copy the invite link.')
+    }
+  }, [inviteLink])
+
+  const changeParticipantRole = useCallback(async (participant, role) => {
+    setMemberBusy(participant.user_id)
+    try {
+      const response = await fetch(`${API_BASE}/api/chats/${activeSessionId}/participants/${participant.user_id}/role`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ role }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not update this member.')
+      await loadParticipants()
+      await loadChatSessions()
+    } catch (error) {
+      setApiError(error.message)
+    } finally {
+      setMemberBusy('')
+    }
+  }, [activeSessionId, loadChatSessions, loadParticipants])
+
+  const removeParticipant = useCallback(async (participant) => {
+    setMemberBusy(participant.user_id)
+    try {
+      const response = await fetch(`${API_BASE}/api/chats/${activeSessionId}/participants/${participant.user_id}`, { method: 'DELETE', credentials: 'include' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not remove this member.')
+      await loadParticipants()
+      await loadChatSessions()
+    } catch (error) {
+      setApiError(error.message)
+    } finally {
+      setMemberBusy('')
+    }
+  }, [activeSessionId, loadChatSessions, loadParticipants])
+
+  const deleteChatSession = useCallback(async (sessionId) => {
+    if (!sessionId || deletingSessionId) return
+    setDeletingSessionId(sessionId)
+    setApiError('')
+    try {
+      const response = await fetch(`${API_BASE}/api/chats/${sessionId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not delete this chat.')
+
+      const remainingSessions = chatSessions.filter((session) => session.id !== sessionId)
+      setChatSessions(remainingSessions)
+      if (sessionId === activeSessionId) {
+        if (remainingSessions.length) await openChatSession(remainingSessions[0].id)
+        else await createChatSession()
+      }
+    } catch (error) {
+      setApiError(error.message === 'Failed to fetch'
+        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        : error.message)
+    } finally {
+      setDeletingSessionId('')
+    }
+  }, [activeSessionId, chatSessions, createChatSession, deletingSessionId, openChatSession])
+
+  const activeSessionIsEmpty = Boolean(activeSessionId) && messages.length === 1 && messages[0]?.id === 1
+  const messageAuthorLabel = useCallback((message) => (
+    message?.role === 'assistant'
+      ? 'Nexa'
+      : (message?.senderName || (message?.sender_user_id === user?.id ? 'You' : 'Member'))
+  ), [user?.id])
+  const startReply = useCallback((message) => {
+    const preview = replyPreviewFromMessage(message)
+    if (!preview) return
+    setReplyTarget(preview)
+  }, [])
+  const insertComposerCommand = useCallback((command) => {
+    setInput((current) => {
+      const trimmed = current.trimStart()
+      if (!current.trim()) return command
+      if (trimmed.toLowerCase().startsWith(command.toLowerCase())) return current
+      return `${command}${current.trimStart()}`
+    })
+    setComposerHelpOpen(false)
+  }, [])
+
+  const requestSignedInLocation = useCallback(async (signedInUser, { force = false } = {}) => {
+    if (!signedInUser) return null
+    const key = userLocationCacheKey(signedInUser)
+    if (!key) return null
+    const cached = readCachedLocation(signedInUser)
+    if (!force && cached?.status === 'denied') {
+      setBrowserLocation({
+        status: 'denied',
+        location: null,
+        error: cached.error || '',
+        updatedAt: cached.updatedAt || 0,
+      })
+      return null
+    }
+    if (!force && cached?.status === 'granted' && cached.location && !cached.stale) {
+      setBrowserLocation(cached)
+      return cached.location
+    }
+
+    setBrowserLocation((current) => ({ ...current, status: 'requesting', error: '' }))
+    const result = await currentBrowserLocation()
+    const next = result.location
+      ? {
+        status: 'granted',
+        location: result.location,
+        error: '',
+        updatedAt: Date.now(),
+      }
+      : {
+        status: 'denied',
+        location: null,
+        error: result.error || 'Nexa could not access browser location.',
+        updatedAt: Date.now(),
+      }
+    setBrowserLocation(next)
+    writeCachedLocation(signedInUser, next)
+    return next.location
+  }, [])
+
+  const acceptInviteFromUrl = useCallback(async () => {
+    const token = /^\/join\/([^/]+)$/.exec(window.location.pathname)?.[1]
+    if (!token) return false
+    const response = await fetch(`${API_BASE}/api/chats/invites/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ token }),
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.detail || 'Could not join this chat.')
+    window.history.replaceState({}, '', '/')
+    await loadChatSessions()
+    await openChatSession(data.session.id)
+    return true
+  }, [loadChatSessions, openChatSession])
+
+  const completeSignIn = useCallback(async (signedInUser) => {
+    setUser(signedInUser)
+    setAuthView(false)
+    try {
+      if (await acceptInviteFromUrl()) return
+      const sessions = await loadChatSessions()
+      if (sessions.length) await openChatSession(sessions[0].id)
+      else await createChatSession()
+    } catch (error) { setApiError(error.message) }
+  }, [acceptInviteFromUrl, createChatSession, loadChatSessions, openChatSession])
+
+  const loadTodos = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/todos`, { credentials: 'include' })
+      if (response.ok) setTodos((await response.json()).tasks || [])
+    } catch {
+      // The chat connection status already communicates backend availability.
+    }
+  }, [])
+
+  const loadPendingEmail = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/email/pending`, { credentials: 'include' })
+      if (!response.ok) return
+      const data = await response.json()
+      applyPendingEmail(data.pending_email || null)
+    } catch {
+      // This card is secondary UI state and can fail quietly.
+    }
+  }, [applyPendingEmail])
+
+  const loadMcpServers = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/mcp/servers`, { credentials: 'include' })
+      if (!response.ok) return
+      const data = await response.json()
+      setMcpServers(data.servers || [])
+    } catch {
+      // Non-critical connected service status.
+    }
+  }, [])
+
+  const loadGoogleServices = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/google/status`, { credentials: 'include' })
+      if (!response.ok) return
+      const data = await response.json()
+      setGoogleServices(data.services || [])
+    } catch {
+      // Google connections are optional and should not affect the chat UI.
+    }
+  }, [])
+
+  const loadCapabilities = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/capabilities`, { credentials: 'include' })
+      if (!response.ok) return
+      setCapabilities(await response.json())
+    } catch {
+      // Capability status is informational and can fail quietly.
+    }
+  }, [])
+
+  const connectGoogleService = useCallback((service) => {
+    window.location.assign(`${API_BASE}/api/google/connect/${service}`)
+  }, [])
+
+  const disconnectGoogleService = useCallback(async (service) => {
+    if (googleActionBusy) return
+    setGoogleActionBusy(service)
+    setApiError('')
+    try {
+      const response = await fetch(`${API_BASE}/api/google/disconnect/${service}`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not disconnect Google service.')
+      await loadGoogleServices()
+      await loadMcpServers()
+      await loadCapabilities()
+    } catch (error) {
+      setApiError(error.message || 'Could not disconnect Google service.')
+    } finally {
+      setGoogleActionBusy('')
+    }
+  }, [googleActionBusy, loadGoogleServices, loadMcpServers, loadCapabilities])
+
+  const loadPendingMcpAction = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/mcp/pending`, { credentials: 'include' })
+      if (!response.ok) return
+      const data = await response.json()
+      setPendingMcpAction(data.pending_action || null)
+    } catch {
+      // Secondary UI state.
+    }
+  }, [])
+
+  const updateTodo = async (task, action) => {
+    const endpoint = action === 'complete'
+      ? `${API_BASE}/api/todos/${task.id}/complete`
+      : `${API_BASE}/api/todos/${task.id}`
+    const response = await fetch(endpoint, {
+      method: action === 'complete' ? 'POST' : 'DELETE',
+      credentials: 'include',
+    })
+    if (response.ok) loadTodos()
+  }
+
+  const createTodo = useCallback(async (event) => {
+    event.preventDefault()
+    const task = todoDraft.trim()
+    const due = todoDueDraft.trim()
+    if (!task || todoBusy) return
+
+    setTodoBusy(true)
+    setApiError('')
+    try {
+      const response = await fetch(`${API_BASE}/api/todos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ task, due }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not add the task.')
+
+      setIsAddingTodo(false)
+      setTodoDraft('')
+      setTodoDueDraft('')
+      setTodos((current) => [data.task, ...current])
+    } catch (error) {
+      setApiError(error.message === 'Failed to fetch'
+        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        : error.message)
+    } finally {
+      setTodoBusy(false)
+    }
+  }, [todoDraft, todoDueDraft, todoBusy])
+
+  const startAddingTodo = useCallback(() => {
+    if (todoBusy || isAddingTodo) return
+    setIsAddingTodo(true)
+  }, [todoBusy, isAddingTodo])
+
+  const cancelAddingTodo = useCallback(() => {
+    if (todoBusy) return
+    setIsAddingTodo(false)
+    setTodoDraft('')
+    setTodoDueDraft('')
+  }, [todoBusy])
+
+  const speak = useCallback((text) => {
+    if (!voiceReplies || !('speechSynthesis' in window)) return
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = 1
+    utterance.pitch = 0.9
+    window.speechSynthesis.speak(utterance)
+  }, [voiceReplies])
+
+  const clearPdfAttachment = useCallback(() => {
+    setPdfFile(null)
+    if (pdfInputRef.current) pdfInputRef.current.value = ''
+  }, [])
+
+  const handlePdfChange = useCallback((event) => {
+    const selectedFile = event.target.files?.[0] || null
+    setApiError('')
+    if (!selectedFile) {
+      setPdfFile(null)
+      return
+    }
+    if (selectedFile.type && selectedFile.type !== 'application/pdf') {
+      setApiError('Upload a PDF file.')
+      clearPdfAttachment()
+      return
+    }
+    if (!selectedFile.name.toLowerCase().endsWith('.pdf')) {
+      setApiError('Upload a PDF file.')
+      clearPdfAttachment()
+      return
+    }
+    if (selectedFile.size > MAX_DOCUMENT_BYTES) {
+      setApiError('Please upload files less than 5 MB.')
+      clearPdfAttachment()
+      return
+    }
+    setPdfFile(selectedFile)
+  }, [clearPdfAttachment])
+
+  const handlePendingEmailAction = useCallback(async (action) => {
+    if (!pendingEmail?.id || emailActionBusy) return
+    if (action === 'confirm' && !pendingRecipient.trim()) {
+      setApiError('Enter the recipient email address before sending.')
+      return
+    }
+    setApiError('')
+    setEmailActionBusy(action)
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/email/pending/${pendingEmail.id}/${action}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            recipient: pendingRecipient,
+            cc: pendingCc,
+            bcc: pendingBcc,
+          }),
+        },
+      )
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || `Could not ${action} the email.`)
+
+      applyPendingEmail(null)
+      setMessages((current) => [...current, {
+        id: Date.now() + 2,
+        role: 'assistant',
+        text: data.message,
+        time: formatMessageTime(),
+      }])
+      setIsOnline(true)
+    } catch (error) {
+      setApiError(error.message === 'Failed to fetch'
+        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        : error.message)
+    } finally {
+      setEmailActionBusy('')
+      loadPendingEmail()
+    }
+  }, [
+    pendingEmail,
+    emailActionBusy,
+    loadPendingEmail,
+    pendingRecipient,
+    pendingCc,
+    pendingBcc,
+    applyPendingEmail,
+  ])
+
+  const handlePendingMcpAction = useCallback(async (action) => {
+    if (!pendingMcpAction?.id || mcpActionBusy) return
+    setApiError('')
+    setMcpActionBusy(action)
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/mcp/pending/${pendingMcpAction.id}/${action}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        },
+      )
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || `Could not ${action} the connected action.`)
+
+      setPendingMcpAction(null)
+      setMessages((current) => [...current, {
+        id: Date.now() + 3,
+        role: 'assistant',
+        text: data.message,
+        time: formatMessageTime(),
+      }])
+      setIsOnline(true)
+    } catch (error) {
+      setApiError(error.message === 'Failed to fetch'
+        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        : error.message)
+    } finally {
+      setMcpActionBusy('')
+      loadPendingMcpAction()
+    }
+  }, [pendingMcpAction, mcpActionBusy, loadPendingMcpAction])
+
+  const sendMessage = useCallback(async (value = input, options = {}) => {
+    const cleanMessage = value.trim()
+    const shouldSpeakReply = Boolean(options.speakReply)
+    if (!cleanMessage || isThinking) return
+    if (!user) {
+      setAuthView(true)
+      return
+    }
+    if (!activeSessionId) {
+      setApiError('Preparing a new chat session. Please try again.')
+      return
+    }
+
+    const attachedPdf = pdfFile
+    const selectedReply = replyTarget
+    const sharedSession = Boolean(chatSessions.find((session) => session.id === activeSessionId)?.shared)
+    const agentMatch = /^@agent\b[\s,:-]*(.+)$/is.exec(cleanMessage)
+    const usesAgent = !sharedSession || Boolean(agentMatch)
+    const agentPrompt = agentMatch ? agentMatch[1].trim() : cleanMessage
+    if ((attachedPdf || /^doc:\s*/i.test(agentPrompt)) && !usesAgent) {
+      setApiError('Start AI and document requests with @Agent in shared sessions.')
+      return
+    }
+    setMessages((current) => [
+      ...current,
+      {
+        id: Date.now(),
+        role: 'user',
+        text: cleanMessage,
+        ...(attachedPdf ? { documentName: attachedPdf.name } : {}),
+        ...(selectedReply ? { replyTo: selectedReply } : {}),
+        time: formatMessageTime(),
+      },
+    ])
+    if (attachedPdf) clearPdfAttachment()
+    setInput('')
+    setReplyTarget(null)
+    setMicError('')
+    setApiError('')
+    if (!usesAgent) {
+      try {
+        const socket = sessionSocketRef.current
+        if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Live chat is reconnecting. Please send again in a moment.')
+        socket.send(JSON.stringify({ type: 'message', content: cleanMessage, ...(selectedReply ? { reply_to_id: selectedReply.id } : {}) }))
+        loadChatSessions().catch(() => {})
+        setIsOnline(true)
+      } catch (error) {
+        setApiError(error.message === 'Failed to fetch' ? 'Nexa API is offline. Start WebApp.py and try again.' : error.message)
+        setIsOnline(false)
+      }
+      return
+    }
+    setThinkingStatus(attachedPdf ? 'Reading attached PDF' : 'Connecting to Nexa')
+    setThinkingDetail(attachedPdf ? 'Extracting text, indexing chunks, and searching the document.' : 'Opening a live stream to the local backend.')
+    setThinkingEvents([
+      {
+        id: `thinking-${Date.now()}`,
+        stage: attachedPdf ? 'PDF' : 'Connect',
+        message: attachedPdf ? 'Reading attached PDF' : 'Connecting to Nexa',
+        detail: attachedPdf ? 'Extracting text, indexing chunks, and searching the document.' : 'Opening a live stream to the local backend.',
+      },
+    ])
+    setLiveAnswer('')
+    setIsThinking(true)
+
+    try {
+      if (attachedPdf) {
+        const formData = new FormData()
+        formData.append('question', agentPrompt)
+        formData.append('session_id', activeSessionId)
+        formData.append('file', attachedPdf)
+        const response = await fetch(`${API_BASE}/api/pdf/ask`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.detail || 'Nexa could not answer from that PDF.')
+
+        const citations = data.citations || []
+        const citationLabels = [...new Set(citations.map((citation) => (
+          citation.filename ? `[${citation.filename} · page ${citation.page}]` : `[page ${citation.page}]`
+        )).filter((label) => !label.includes('page undefined')))]
+        const citationNote = citationLabels.length
+          ? `\n\nSources: ${citationLabels.join(', ')}`
+          : ''
+        const completedAnswer = `${data.answer || ''}${citationNote}`.trim()
+        if (!completedAnswer) throw new Error('Nexa returned an empty PDF answer.')
+        setMessages((current) => [...current, {
+          id: Date.now() + 1,
+          role: 'assistant',
+          text: completedAnswer,
+          time: formatMessageTime(),
+          cards: {
+            document: data.document || null,
+            pdfCitations: data.citations || [],
+          },
+        }])
+        if (shouldSpeakReply) speak(completedAnswer)
+        clearPdfAttachment()
+        loadChatSessions().catch(() => {})
+        setIsOnline(true)
+        return
+      }
+
+      if (/^doc:\s*/i.test(agentPrompt)) {
+        const response = await fetch(`${API_BASE}/api/documents/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ question: agentPrompt, session_id: activeSessionId }),
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.detail || 'Nexa could not search your saved documents.')
+        const citations = data.citations || []
+        const citationLabels = [...new Set(citations.map((citation) => (
+          citation.filename ? `[${citation.filename} · page ${citation.page}]` : `[page ${citation.page}]`
+        )).filter((label) => !label.includes('page undefined')))]
+        const citationNote = citationLabels.length ? `\n\nSources: ${citationLabels.join(', ')}` : ''
+        const completedAnswer = `${data.answer || ''}${citationNote}`.trim()
+        if (!completedAnswer) throw new Error('Nexa returned an empty document answer.')
+        setMessages((current) => [...current, {
+          id: Date.now() + 1,
+          role: 'assistant',
+          text: completedAnswer,
+          time: formatMessageTime(),
+          cards: { document: data.document || null, pdfCitations: citations },
+        }])
+        if (shouldSpeakReply) speak(completedAnswer)
+        loadChatSessions().catch(() => {})
+        setIsOnline(true)
+        return
+      }
+
+      const needsBrowserLocation = locationRequestPattern.test(cleanMessage)
+      let chatLocation = browserLocation.location
+      if (needsBrowserLocation && !chatLocation) {
+        chatLocation = await requestSignedInLocation(user, { force: true })
+        if (!chatLocation) {
+          const latestLocationState = readCachedLocation(user)
+          throw new Error(latestLocationState?.error || browserLocation.error || 'Nexa could not access browser location.')
+        }
+      }
+      const response = await fetch(`${API_BASE}/api/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: cleanMessage, session_id: activeSessionId, ...(chatLocation ? { location: chatLocation } : {}), ...(selectedReply ? { reply_to_id: selectedReply.id } : {}) }),
+        credentials: 'include',
+      })
+      if (!response.ok || !response.body) {
+        const data = await response.json()
+        throw new Error(data.detail || 'Nexa could not start the response stream.')
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let completedAnswer = ''
+      let confirmationEmail = null
+      let confirmationAction = null
+      let skipChatMessage = false
+      let streamFinished = false
+
+      while (!streamFinished) {
+        const { value: chunk, done } = await reader.read()
+        buffer += decoder.decode(chunk || new Uint8Array(), { stream: !done })
+        const packets = buffer.split('\n\n')
+        buffer = packets.pop() || ''
+
+        for (const packet of packets) {
+          const dataLine = packet.split('\n').find((line) => line.startsWith('data:'))
+          if (!dataLine) continue
+          const event = JSON.parse(dataLine.slice(5).trim())
+          if (event.type === 'status') {
+            setThinkingStatus(event.message)
+            setThinkingDetail(event.detail || '')
+            setThinkingEvents(() => {
+              const nextEvent = {
+                id: `${event.stage || 'step'}-${Date.now()}`,
+                stage: event.stage || 'Update',
+                message: event.message,
+                detail: event.detail || '',
+              }
+              // The chat should communicate the live action, not expose a
+              // running internal trace. Each status replaces the last one.
+              return [nextEvent]
+            })
+          } else if (event.type === 'confirm_email') {
+            confirmationEmail = event.email || null
+            applyPendingEmail(event.email || null)
+          } else if (event.type === 'confirm_mcp_action') {
+            confirmationAction = event.action || null
+            setPendingMcpAction(event.action || null)
+          } else if (event.type === 'delta') {
+            completedAnswer += event.content
+            setLiveAnswer(completedAnswer)
+          } else if (event.type === 'error') {
+            throw new Error(event.message)
+          } else if (event.type === 'done') {
+            completedAnswer = event.answer || ''
+            skipChatMessage = Boolean(event.skip_chat)
+            loadTodos()
+            streamFinished = true
+            break
+          }
+        }
+        if (done) break
+      }
+
+      if (!completedAnswer.trim() && !confirmationEmail && !confirmationAction && !skipChatMessage) {
+        throw new Error('Nexa returned an empty response.')
+      }
+      if (confirmationEmail || confirmationAction || skipChatMessage) {
+        await loadPendingEmail()
+        await loadPendingMcpAction()
+      }
+      if (!skipChatMessage && completedAnswer.trim()) {
+        setMessages((current) => [...current, {
+          id: Date.now() + 1,
+          role: 'assistant',
+          text: completedAnswer,
+          time: formatMessageTime(),
+        }])
+        if (shouldSpeakReply) speak(completedAnswer)
+        loadChatSessions().catch(() => {})
+      }
+      setIsOnline(true)
+    } catch (error) {
+      setApiError(error.message === 'Failed to fetch'
+        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        : error.message)
+      setIsOnline(false)
+    } finally {
+      setIsThinking(false)
+      setThinkingStatus('')
+      setThinkingDetail('')
+      setThinkingEvents([])
+      setLiveAnswer('')
+    }
+  }, [
+    input,
+    isThinking,
+    user,
+    activeSessionId,
+    chatSessions,
+    pdfFile,
+    speak,
+    loadTodos,
+    loadPendingEmail,
+    loadPendingMcpAction,
+    applyPendingEmail,
+    clearPdfAttachment,
+    loadChatSessions,
+    browserLocation,
+    requestSignedInLocation,
+    replyTarget,
+  ])
+
+  useEffect(() => {
+    if (!user || !activeSessionId) return undefined
+    const timer = window.setTimeout(() => {
+      loadParticipants().catch(() => {
+        setParticipants([])
+        setSessionRole('member')
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [activeSessionId, loadParticipants, user])
+
+  useEffect(() => {
+    if (!user || !activeSessionId) return undefined
+    let disposed = false
+    let reconnectTimer = 0
+
+    const recoverSession = async () => {
+      const sessions = await loadChatSessions()
+      if (sessions.length) await openChatSession(sessions[0].id)
+      else await createChatSession()
+    }
+
+    const connect = () => {
+      const apiUrl = new URL(API_BASE || window.location.origin, window.location.origin)
+      apiUrl.protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+      apiUrl.pathname = `/api/chats/${activeSessionId}/live`
+      apiUrl.search = ''
+      const socket = new WebSocket(apiUrl.toString())
+      sessionSocketRef.current = socket
+
+      socket.onmessage = async (packet) => {
+        let event
+        try { event = JSON.parse(packet.data) } catch { return }
+        if (event.type === 'message' && event.message) {
+          const incoming = messageWithDocumentReference(event.message, event.message.id)
+          setMessages((current) => {
+            if (current.some((message) => String(message.id) === String(incoming.id))) return current
+            const optimisticIndex = [...current].reverse().findIndex((message) => (
+              message.role === 'user' && message.text === incoming.text && !message.senderName && !message.sender_user_id
+            ))
+            if (optimisticIndex < 0) return [...current, incoming]
+            const index = current.length - optimisticIndex - 1
+            return current.map((message, itemIndex) => itemIndex === index ? incoming : message)
+          })
+          loadChatSessions().catch(() => {})
+        } else if (event.type === 'refresh') {
+          try {
+            await openChatSession(activeSessionId)
+            await loadChatSessions()
+            await loadParticipants(activeSessionId)
+          } catch (error) {
+            if (error.status === 404) await recoverSession()
+          }
+        } else if (event.type === 'error') {
+          setApiError(event.message || 'Could not send the message.')
+        }
+      }
+      socket.onclose = () => {
+        if (!disposed) reconnectTimer = window.setTimeout(connect, 1000)
+      }
+    }
+
+    connect()
+    return () => {
+      disposed = true
+      window.clearTimeout(reconnectTimer)
+      sessionSocketRef.current?.close()
+      sessionSocketRef.current = null
+    }
+  }, [activeSessionId, createChatSession, loadChatSessions, loadParticipants, openChatSession, user])
+
+  useEffect(() => {
+    if (!membersOpen && !composerHelpOpen) return undefined
+    const closeOnOutsideClick = (event) => {
+      if (membersPanelRef.current && !membersPanelRef.current.contains(event.target)) setMembersOpen(false)
+      if (composerHelpRef.current && !composerHelpRef.current.contains(event.target)) setComposerHelpOpen(false)
+    }
+    window.addEventListener('mousedown', closeOnOutsideClick)
+    return () => window.removeEventListener('mousedown', closeOnOutsideClick)
+  }, [composerHelpOpen, membersOpen])
+
+  useEffect(() => {
+    const loadNexa = async () => {
+      try {
+        const authResponse = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+        if (authResponse.ok) {
+          const auth = await authResponse.json()
+          setUser(auth.user)
+          if (await acceptInviteFromUrl()) return
+          const sessions = await loadChatSessions()
+          if (sessions.length) await openChatSession(sessions[0].id)
+          else await createChatSession()
+        } else if (/^\/join\/[^/]+$/.test(window.location.pathname)) {
+          // Keep the invite URL intact; after sign-in the join effect redeems it.
+          setAuthView(true)
+        }
+        const [
+          healthResponse,
+          todosResponse,
+          pendingEmailResponse,
+          mcpServersResponse,
+          pendingMcpResponse,
+          googleServicesResponse,
+          capabilitiesResponse,
+        ] = await Promise.all([
+          fetch(`${API_BASE}/api/health`, { credentials: 'include' }),
+          fetch(`${API_BASE}/api/todos`, { credentials: 'include' }),
+          fetch(`${API_BASE}/api/email/pending`, { credentials: 'include' }),
+          fetch(`${API_BASE}/api/mcp/servers`, { credentials: 'include' }),
+          fetch(`${API_BASE}/api/mcp/pending`, { credentials: 'include' }),
+          fetch(`${API_BASE}/api/google/status`, { credentials: 'include' }),
+          fetch(`${API_BASE}/api/capabilities`, { credentials: 'include' }),
+        ])
+        if (!healthResponse.ok) throw new Error()
+        if (todosResponse.ok) setTodos((await todosResponse.json()).tasks || [])
+        if (pendingEmailResponse.ok) {
+          applyPendingEmail((await pendingEmailResponse.json()).pending_email || null)
+        }
+        if (mcpServersResponse.ok) {
+          setMcpServers((await mcpServersResponse.json()).servers || [])
+        }
+        if (pendingMcpResponse.ok) {
+          setPendingMcpAction((await pendingMcpResponse.json()).pending_action || null)
+        }
+        if (googleServicesResponse.ok) {
+          setGoogleServices((await googleServicesResponse.json()).services || [])
+        }
+        if (capabilitiesResponse.ok) {
+          setCapabilities(await capabilitiesResponse.json())
+        }
+        const params = new URLSearchParams(window.location.search)
+        if (params.get('google') === 'error') {
+          setApiError(params.get('detail') || 'Google account connection was not completed.')
+        }
+        if (params.has('google')) window.history.replaceState({}, '', window.location.pathname)
+        setIsOnline(true)
+      } catch {
+        setIsOnline(false)
+        setApiError('Nexa API is offline. Start WebApp.py to begin chatting.')
+      }
+    }
+    loadNexa()
+  }, [acceptInviteFromUrl, applyPendingEmail, createChatSession, loadChatSessions, openChatSession])
+
+  useEffect(() => {
+    if (!user) {
+      locationPromptedRef.current = ''
+      setBrowserLocation({
+        status: 'idle',
+        location: null,
+        error: '',
+        updatedAt: 0,
+      })
+      return
+    }
+    const key = userLocationCacheKey(user)
+    if (!key || locationPromptedRef.current === key) return
+    locationPromptedRef.current = key
+    requestSignedInLocation(user).catch(() => {
+      // The helper stores a user-facing error state; no need to interrupt the app.
+    })
+  }, [user, requestSignedInLocation])
+
+  useEffect(() => {
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, isThinking, liveAnswer, thinkingStatus])
+
+  useEffect(() => {
+    if (isAddingTodo) todoDraftRef.current?.focus()
+  }, [isAddingTodo])
+
+  const stopCapture = useCallback(async () => {
+    const capture = captureRef.current
+    if (!capture) return
+    captureRef.current = null
+    window.clearTimeout(capture.timeout)
+    capture.processor.disconnect()
+    capture.silence.disconnect()
+    capture.source.disconnect()
+    capture.stream.getTracks().forEach((track) => track.stop())
+    await capture.context.close()
+    setIsListening(false)
+
+    try {
+      const length = capture.chunks.reduce((total, chunk) => total + chunk.length, 0)
+      const pcm = new Int16Array(length)
+      let offset = 0
+      for (const chunk of capture.chunks) {
+        for (let index = 0; index < chunk.length; index += 1) {
+          pcm[offset + index] = Math.max(-1, Math.min(1, chunk[index])) * 0x7fff
+        }
+        offset += chunk.length
+      }
+      const bytes = new Uint8Array(pcm.buffer)
+      let binary = ''
+      for (let index = 0; index < bytes.length; index += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + 8192))
+      }
+
+      setMicError("Transcribing your voice locally...")
+      const response = await fetch(`${API_BASE}/api/transcribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ audio: btoa(binary), sample_rate: capture.sampleRate }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Voice recognition failed.')
+      setInput(data.transcript)
+      setMicError('')
+      await sendMessage(data.transcript, { speakReply: true })
+    } catch (error) {
+      setMicError(error.message === 'Failed to fetch'
+        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        : error.message)
+    }
+  }, [sendMessage])
+
+  const toggleListening = async () => {
+    if (captureRef.current) {
+      await stopCapture()
+      return
+    }
+    setMicError('')
+    setInput('')
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('This browser does not support microphone capture. Use a current version of Chrome or Edge.')
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      })
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext
+      const context = new AudioContextClass()
+      const source = context.createMediaStreamSource(stream)
+      const processor = context.createScriptProcessor(4096, 1, 1)
+      const silence = context.createGain()
+      silence.gain.value = 0
+      const capture = {
+        context,
+        source,
+        processor,
+        silence,
+        stream,
+        chunks: [],
+        sampleRate: context.sampleRate,
+        heardSpeech: false,
+        silenceSince: null,
+        timeout: null,
+      }
+      processor.onaudioprocess = (event) => {
+        const samples = event.inputBuffer.getChannelData(0)
+        capture.chunks.push(new Float32Array(samples))
+        let peak = 0
+        for (let index = 0; index < samples.length; index += 1) peak = Math.max(peak, Math.abs(samples[index]))
+        if (peak > 0.012) {
+          capture.heardSpeech = true
+          capture.silenceSince = null
+        } else if (capture.heardSpeech) {
+          capture.silenceSince ??= Date.now()
+          if (Date.now() - capture.silenceSince > 1100) window.setTimeout(stopCapture, 0)
+        }
+      }
+      source.connect(processor)
+      processor.connect(silence)
+      silence.connect(context.destination)
+      capture.timeout = window.setTimeout(stopCapture, 12_000)
+      captureRef.current = capture
+      setIsListening(true)
+      setMicError("Listening... speak now. I'll stop after you pause.")
+    } catch (error) {
+      setIsListening(false)
+      setMicError(error.name === 'NotAllowedError'
+        ? 'Microphone access was blocked. Allow it in your browser address bar and try again.'
+        : error.message || 'The microphone could not be started.')
+    }
+  }
+
+  if (authView) return <AuthScreen onSignedIn={completeSignIn} />
+
+  const activeSession = chatSessions.find((session) => session.id === activeSessionId)
+  const sharedSessionActive = Boolean(activeSession?.shared)
+  const agentMode = sharedSessionActive && /^@agent\b/i.test(input.trimStart())
+
+  return (
+    <main className="app-shell">
+      <AmbientParticles />
+      <header className="topbar">
+        <a className="brand" href="/" aria-label="Nexa home">
+          <span className="brand-emblem"><Logo /></span>
+          <span className="brand-copy">
+            <strong>NEXA</strong>
+            <small>Personal intelligence</small>
+          </span>
+        </a>
+
+        <div className="system-state">
+          <Sparkles size={14} />
+          <span>{isOnline ? 'Nexa is ready' : 'Agent offline'}</span>
+        </div>
+
+        <div className="topbar-actions">
+          <div className="navbar-google-actions" aria-label="Google connections">
+            {['gmail', 'google_drive', 'google_calendar'].map((service) => {
+              const details = googleServices.find((item) => item.service === service)
+              const icon = service === 'google_calendar' ? 'calendar.png' : service === 'google_drive' ? 'drive.png' : 'gmail.png'
+              const label = details?.label || (service === 'google_drive' ? 'Google Drive' : service === 'google_calendar' ? 'Google Calendar' : 'Gmail')
+              return <button className={`navbar-google-button ${details?.connected ? 'connected' : ''}`} type="button" key={service} onClick={() => details?.connected ? disconnectGoogleService(service) : connectGoogleService(service)} disabled={googleActionBusy === service} title={details?.connected ? `${label} connected${details.email ? ` · ${details.email}` : ''}. Click to disconnect.` : `Connect ${label}`}><img src={`/${icon}`} alt="" /><span><b>{googleActionBusy === service ? '...' : label.replace('Google ', '')}</b><small>{details?.connected ? 'Connected' : 'Connect'}</small></span></button>
+            })}
+          </div>
+          {user ? <button className={`profile-button ${user.picture ? 'has-photo' : ''}`} type="button" data-email={user.email} title={user.email} aria-label={`Signed in as ${user.email}`}>{user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : (user.name?.trim()?.charAt(0)?.toUpperCase() || 'U')}</button> : <button className="profile-button" type="button" onClick={() => setAuthView(true)} aria-label="Sign in">?</button>}
+        </div>
+      </header>
+
+      <div className="mobile-drawer-actions" aria-label="Mobile panels">
+        <button type="button" onClick={() => { setLeftPanelOpen(true); setRightPanelOpen(false) }} aria-label="Open chat sessions"><History size={18} /><span>Chats</span></button>
+        <button type="button" onClick={() => { setRightPanelOpen(true); setLeftPanelOpen(false) }} aria-label="Open todos"><ListTodo size={18} /><span>Tasks</span></button>
+      </div>
+
+      {(leftPanelOpen || rightPanelOpen) && <button className="mobile-panel-scrim" type="button" aria-label="Close side panels" onClick={() => { setLeftPanelOpen(false); setRightPanelOpen(false) }} />}
+
+      <section className="command-layout">
+        <aside className={`command-sidebar chat-sidebar ${leftPanelOpen ? 'mobile-open' : ''}`}>
+          <AmbientParticles id="nexa-particles-sidebar-left" className="sidebar-particles" compact />
+          <button className="mobile-drawer-close" type="button" onClick={() => setLeftPanelOpen(false)} aria-label="Close chat sessions"><X size={18} /></button>
+          <div className="chat-sidebar-content">
+            <button className="new-chat-button" type="button" disabled={activeSessionIsEmpty} onClick={() => user ? createChatSession().catch((error) => setApiError(error.message)) : setAuthView(true)}><Plus size={17} /> New chat <span>⌘ K</span></button>
+            <div className="chat-list-heading"><p className="section-label">RECENT CONVERSATIONS</p><button type="button" aria-label="Search chats"><Search size={15} /></button></div>
+            <div className="chat-session-list">
+              {chatSessions.map((session) => (
+                <div className={`chat-session-row ${session.id === activeSessionId ? 'active' : ''}`} key={session.id}>
+                  <button type="button" className={`chat-session-button ${session.id === activeSessionId ? 'active' : ''}`} onClick={() => { openChatSession(session.id).catch((error) => setApiError(error.message)); setLeftPanelOpen(false) }}>
+                    <span>{session.title}</span>
+                    {session.shared && <small className="session-member-count"><Users size={12} />{session.member_count || 2}</small>}
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-session-delete"
+                    onClick={() => deleteChatSession(session.id)}
+                    disabled={deletingSessionId === session.id}
+                    aria-label={`Delete ${session.title}`}
+                    title="Delete chat"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              {!user && <p>Send a message to sign in and start saving chats.</p>}
+            </div>
+          </div>
+          <div className="todo-card todo-card-primary">
+            <div className="rail-heading todo-heading">
+              <div><p className="section-label">PERSONAL TASKS</p><h2>Todo list</h2></div>
+              <div className="todo-heading-actions">
+                <span className="todo-count">{todos.filter((task) => !task.completed).length}</span>
+                <button
+                  type="button"
+                  className="todo-plus-button"
+                  onClick={startAddingTodo}
+                  disabled={isAddingTodo}
+                  aria-label="Add new task"
+                  title="Add new task"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div className="todo-list-shell">
+              {todos.length === 0 && !isAddingTodo ? <p className="todo-empty">Click + or say "add to my tasks..." to get started.</p> : (
+                <form className="todo-list" onSubmit={createTodo}>
+                  {todos.slice(0, 8).map((task) => (
+                    <div className={`todo-item ${task.completed ? 'completed' : ''}`} key={task.id}>
+                      <button type="button" className="todo-check" onClick={() => updateTodo(task, 'complete')} disabled={task.completed} aria-label={`Complete ${task.task}`}>{task.completed ? '✓' : ''}</button>
+                      <div><strong>{task.task}</strong>{task.due && <small>{task.due}</small>}</div>
+                      <button type="button" className="todo-remove" onClick={() => updateTodo(task, 'remove')} aria-label={`Remove ${task.task}`}>&times;</button>
+                    </div>
+                  ))}
+
+                  {isAddingTodo && (
+                    <div className="todo-item todo-item-draft">
+                      <span className="todo-draft-marker" aria-hidden="true" />
+                      <div className="todo-inline-editor">
+                        <input
+                          ref={todoDraftRef}
+                          className="todo-inline-task"
+                          value={todoDraft}
+                          onChange={(event) => setTodoDraft(event.target.value)}
+                          placeholder="Write your task..."
+                          aria-label="New task"
+                        />
+                        <input
+                          className="todo-inline-due"
+                          value={todoDueDraft}
+                          onChange={(event) => setTodoDueDraft(event.target.value)}
+                          placeholder="Optional time or date"
+                          aria-label="Task due date or time"
+                        />
+                      </div>
+                      <div className="todo-inline-actions">
+                        <button
+                          type="submit"
+                          className="todo-inline-save"
+                          disabled={!todoDraft.trim() || todoBusy}
+                        >
+                          {todoBusy ? 'Saving...' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          className="todo-inline-cancel"
+                          onClick={cancelAddingTodo}
+                          disabled={todoBusy}
+                          aria-label="Cancel new task"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </form>
+              )}
+            </div>
+          </div>
+
+          {/* <div className="core-card core-card-bottom">
+            <div className={`core-visual ${isThinking ? 'processing' : ''} ${isListening ? 'listening' : ''}`}>
+              <span className="core-ring ring-one" />
+              <span className="core-ring ring-two" />
+              <span className="core-ring ring-three" />
+              <span className="core-center"><Logo /></span>
+            </div>
+            <div className="core-copy">
+              <span>NEXA CORE</span>
+              <strong>{isListening ? 'Listening now' : isThinking ? 'Processing request' : 'Ready when you are'}</strong>
+            </div>
+          </div> */}
+
+          <div className="sidebar-foot">
+            <span className="shield-icon" aria-hidden="true" />
+            <p><strong>Private by default</strong><small>Audio is processed locally</small></p>
+          </div>
+        </aside>
+
+        <section className="chat-stage" aria-label="Nexa conversation">
+
+          {user && activeSessionId && (
+            <div className="session-collaboration-bar">
+              <div>
+                <span className="section-label">{activeSession?.shared ? 'SHARED SESSION' : 'PRIVATE SESSION'}</span>
+                <strong>{activeSession?.title || 'New chat'}</strong>
+              </div>
+              <div className="session-collaboration-actions">
+                <button type="button" className="session-members-button" onClick={() => { setMembersOpen((open) => !open); loadParticipants().catch((error) => setApiError(error.message)) }} title="Manage members" aria-label="Manage members">
+                  {participants.length > 1 ? <span className="participant-avatars">{participants.slice(0, 3).map((participant) => participant.picture ? <img key={participant.user_id} src={participant.picture} alt="" referrerPolicy="no-referrer" /> : <i key={participant.user_id}>{participant.name?.trim()?.charAt(0)?.toUpperCase() || 'M'}</i>)}</span> : <Users size={17} />}
+                  <span>{participants.length || 1}</span>
+                </button>
+                {sessionRole === 'admin' && <button type="button" onClick={shareChat} disabled={memberBusy === 'invite'} title="Copy invite link" aria-label="Copy invite link"><Share2 size={17} /></button>}
+              </div>
+              {membersOpen && (
+                <section className="members-panel" ref={membersPanelRef} aria-label="Session members">
+                  <div className="members-panel-heading"><strong>Members</strong>{sessionRole === 'admin' && <button type="button" onClick={shareChat} disabled={memberBusy === 'invite'}>{memberBusy === 'invite' ? 'Creating...' : 'Copy invite link'}</button>}</div>
+                  {participants.map((participant) => (
+                    <div className="member-row" key={participant.user_id}>
+                      <div><strong>{participant.name}{participant.user_id === user.id ? ' (you)' : ''}</strong><small>{participant.email}</small></div>
+                      <span className={`member-role ${participant.role}`}>{participant.role === 'admin' ? <Crown size={12} /> : null}{participant.role}</span>
+                      {sessionRole === 'admin' && participant.user_id !== user.id && (
+                        <div className="member-actions">
+                          <button type="button" disabled={memberBusy === participant.user_id} onClick={() => changeParticipantRole(participant, participant.role === 'admin' ? 'member' : 'admin')} title={participant.role === 'admin' ? 'Make member' : 'Make admin'}><Crown size={14} /></button>
+                          <button type="button" disabled={memberBusy === participant.user_id} onClick={() => removeParticipant(participant)} title="Remove member"><UserMinus size={14} /></button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </section>
+              )}
+            </div>
+          )}
+
+          {shareDialogOpen && (
+            <div className="share-dialog-overlay" role="presentation" onMouseDown={() => setShareDialogOpen(false)}>
+              <section className="share-dialog" role="dialog" aria-modal="true" aria-label="Share chat invite" onMouseDown={(event) => event.stopPropagation()}>
+                <div className="share-dialog-head"><div><span className="section-label">SHARE SESSION</span><h2>Invite collaborators</h2></div><button type="button" onClick={() => setShareDialogOpen(false)} aria-label="Close share dialog"><X size={18} /></button></div>
+                <div className="share-link-row"><Link2 size={17} /><input value={inviteLink} readOnly aria-label="Invite link" /><button type="button" onClick={copyInviteLink}><Copy size={15} />{inviteCopied ? 'Copied' : 'Copy'}</button></div>
+                <div className="share-app-links">
+                  <a href={`https://wa.me/?text=${encodeURIComponent(`Join my Nexa chat: ${inviteLink}`)}`} target="_blank" rel="noreferrer"><img src="/whatsapp.png" alt="" />WhatsApp</a>
+                  <a href={`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent('Join my Nexa chat')}`} target="_blank" rel="noreferrer"><img src="/telegram.png" alt="" />Telegram</a>
+                  <a href={`https://x.com/intent/post?text=${encodeURIComponent(`Join my Nexa chat: ${inviteLink}`)}`} target="_blank" rel="noreferrer"><img src="/X.png" alt="" />X</a>
+                </div>
+              </section>
+            </div>
+          )}
+
+          <div className="mobile-prompts" aria-label="Suggested prompts">
+            {suggestions.map((suggestion) => (
+              <button key={suggestion.label} type="button" onClick={() => sendMessage(suggestion.label)}>
+                {suggestion.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="conversation" ref={feedRef} aria-live="polite">
+            {activeSessionIsEmpty && <section className="empty-chat-hero">
+              <div className="hero-orbit"><span /><Sparkles size={28} /></div>
+              <p className="section-label">NEXA / INTELLIGENCE LAYER</p>
+              <h2>What are we creating today?</h2>
+              <p>Research, create, plan, and get things done with your personal AI workspace.</p>
+              <div className="hero-pills" aria-label="Sample prompts">
+                {suggestions.map(({ label, icon: Icon }) => (
+                  <button key={label} type="button" onClick={() => sendMessage(label)} disabled={isThinking}>
+                    <Icon size={14} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </section>}
+            {!activeSessionIsEmpty && messages.map((message) => (
+              <article className={`message ${message.role}`} key={message.id}>
+                {message.role === 'system' ? <p className="system-message"><span className="system-message-pulse" aria-hidden="true" />{message.text}</p> : <>
+                {message.role === 'assistant' && (
+                  <div className="assistant-avatar"><Logo /></div>
+                )}
+                <div className="message-content">
+                  <div className="message-meta">
+                    <strong>{messageAuthorLabel(message)}</strong>
+                    <span>{message.time}</span>
+                    <button
+                      className="message-reply-button"
+                      type="button"
+                      onClick={() => startReply(message)}
+                      aria-label={`Reply to ${messageAuthorLabel(message)}`}
+                      title="Reply"
+                    >
+                      <Reply size={13} />
+                    </button>
+                  </div>
+                  {message.replyTo && (
+                    <div className="message-reply-quote">
+                      <strong>{message.replyTo.role === 'assistant' ? 'Nexa' : (message.replyTo.senderName || (message.replyTo.sender_user_id === user?.id ? 'You' : 'Member'))}</strong>
+                      <span>{message.replyTo.text}</span>
+                    </div>
+                  )}
+                  {message.role === 'assistant'
+                    ? (
+                      <>
+                        <MarkdownMessage>{message.text}</MarkdownMessage>
+                        <AnswerCards message={message} />
+                      </>
+                    )
+                    : (
+                      <>
+                        <p>{message.text}</p>
+                        {message.documentName && (
+                          <span className="message-document-ref" title={message.documentName}>
+                            <FileText size={13} aria-hidden="true" />
+                            {message.documentName}
+                          </span>
+                        )}
+                      </>
+                  )}
+                </div>
+                </>}
+              </article>
+            ))}
+
+            {isThinking && (
+              <article className="message assistant active-response">
+                <div className="assistant-avatar"><Logo /></div>
+                <div className="message-content stream-response">
+                  <div className="thinking-stage" aria-live="polite">
+                    <span className="thinking-pulse"><i /><i /><i /></span>
+                    <span>{thinkingStatus || 'Thinking'}</span>
+                  </div>
+                  <div className="agent-steps-in-chat" aria-label="Current agent action">
+                    <div className="agent-step">
+                      <span className="agent-step-orb" aria-hidden="true" />
+                      <strong>{thinkingStatus || 'Working on your request'}</strong>
+                    </div>
+                  </div>
+                  {liveAnswer && <MarkdownMessage streaming>{liveAnswer}</MarkdownMessage>}
+                </div>
+              </article>
+            )}
+          </div>
+
+          <footer className="composer-dock">
+            {micError && <p className="mic-error" role="status">{micError}</p>}
+            {apiError && <p className="api-error" role="alert">{apiError}</p>}
+
+            {pendingEmail && (
+              <div className="email-confirmation-overlay" role="presentation">
+                <section className="email-confirmation-card" aria-label="Email confirmation" role="dialog" aria-modal="true">
+                  <div className="email-confirmation-head">
+                    <div>
+                      <p className="section-label">EMAIL CONFIRMATION</p>
+                      <h3>Should I send this email?</h3>
+                    </div>
+                    <div className="email-confirmation-tools">
+                      <span className="email-confirmation-pill">Awaiting approval</span>
+                      <button
+                        type="button"
+                        className="email-close-button"
+                        onClick={() => handlePendingEmailAction('cancel')}
+                        disabled={Boolean(emailActionBusy)}
+                        aria-label="Close email confirmation"
+                        title="Close"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="email-confirmation-grid">
+                    <div className="email-confirmation-field">
+                      <span>From</span>
+                      <strong>{pendingEmail.sender}</strong>
+                    </div>
+                    <div className="email-confirmation-field">
+                      <span>To</span>
+                      <label className="email-inline-input">
+                        <input
+                          value={pendingRecipient}
+                          onChange={(event) => setPendingRecipient(event.target.value)}
+                          placeholder="name@company.com"
+                          aria-label="Recipient email address"
+                        />
+                      </label>
+                    </div>
+                    <div className="email-confirmation-field">
+                      <span>Subject</span>
+                      <strong>{pendingEmail.subject}</strong>
+                    </div>
+                    <div className="email-confirmation-field">
+                      <span>CC</span>
+                      <label className="email-inline-input">
+                        <input
+                          value={pendingCc}
+                          onChange={(event) => setPendingCc(event.target.value)}
+                          placeholder="Optional"
+                          aria-label="CC email address"
+                        />
+                      </label>
+                    </div>
+                    <div className="email-confirmation-field">
+                      <span>BCC</span>
+                      <label className="email-inline-input">
+                        <input
+                          value={pendingBcc}
+                          onChange={(event) => setPendingBcc(event.target.value)}
+                          placeholder="Optional"
+                          aria-label="BCC email address"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="email-preview-card">
+                    <span>Email body</span>
+                    <pre>{pendingEmail.body}</pre>
+                  </div>
+
+                  <div className="email-confirmation-actions">
+                    <button
+                      type="button"
+                      className="email-send-button"
+                      onClick={() => handlePendingEmailAction('confirm')}
+                      disabled={Boolean(emailActionBusy)}
+                    >
+                      {emailActionBusy === 'confirm' ? 'Sending...' : 'Send email'}
+                    </button>
+                    <button
+                      type="button"
+                      className="email-cancel-button"
+                      onClick={() => handlePendingEmailAction('cancel')}
+                      disabled={Boolean(emailActionBusy)}
+                    >
+                      {emailActionBusy === 'cancel' ? 'Cancelling...' : 'Cancel'}
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {pendingMcpAction && (
+              <div className="email-confirmation-overlay" role="presentation">
+                <section className="email-confirmation-card" aria-label="Connected app confirmation" role="dialog" aria-modal="true">
+                  <div className="email-confirmation-head">
+                    <div>
+                      <p className="section-label">CONNECTED APP APPROVAL</p>
+                      <h3>Should I run this action?</h3>
+                    </div>
+                    <div className="email-confirmation-tools">
+                      <span className="email-confirmation-pill">Awaiting approval</span>
+                      <button
+                        type="button"
+                        className="email-close-button"
+                        onClick={() => handlePendingMcpAction('cancel')}
+                        disabled={Boolean(mcpActionBusy)}
+                        aria-label="Close connected app confirmation"
+                        title="Close"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="email-confirmation-grid">
+                    <div className="email-confirmation-field">
+                      <span>Service</span>
+                      <strong>{pendingMcpAction.server_label || pendingMcpAction.server_name}</strong>
+                    </div>
+                    <div className="email-confirmation-field">
+                      <span>Action</span>
+                      <strong>{pendingMcpAction.display_name}</strong>
+                    </div>
+                  </div>
+
+                  <div className="email-preview-card">
+                    <span>Arguments</span>
+                    <pre>{JSON.stringify(pendingMcpAction.arguments || {}, null, 2)}</pre>
+                  </div>
+
+                  <div className="email-confirmation-actions">
+                    <button
+                      type="button"
+                      className="email-send-button"
+                      onClick={() => handlePendingMcpAction('confirm')}
+                      disabled={Boolean(mcpActionBusy)}
+                    >
+                      {mcpActionBusy === 'confirm' ? 'Running...' : 'Confirm action'}
+                    </button>
+                    <button
+                      type="button"
+                      className="email-cancel-button"
+                      onClick={() => handlePendingMcpAction('cancel')}
+                      disabled={Boolean(mcpActionBusy)}
+                    >
+                      {mcpActionBusy === 'cancel' ? 'Cancelling...' : 'Cancel'}
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {pdfFile && (
+              <div className="pdf-attachment-strip" role="status">
+                <span className="pdf-file-icon" aria-hidden="true" />
+                <div>
+                  <strong>{pdfFile.name}</strong>
+                  <small>Use Remember: in prompt to save it; normal uploads are used once and never stored</small>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearPdfAttachment}
+                  disabled={isThinking}
+                  aria-label="Remove attached PDF"
+                  title="Remove PDF"
+                >
+                  &times;
+                </button>
+              </div>
+            )}
+
+            {replyTarget && (
+              <div className="reply-composer-preview" role="status">
+                <Reply size={14} aria-hidden="true" />
+                <div>
+                  <strong>Replying to {replyTarget.role === 'assistant' ? 'Nexa' : (replyTarget.senderName || (replyTarget.sender_user_id === user?.id ? 'you' : 'Member'))}</strong>
+                  <span>{replyTarget.text}</span>
+                </div>
+                <button type="button" onClick={() => setReplyTarget(null)} aria-label="Cancel reply" title="Cancel reply">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
+            <form className={`text-composer ${agentMode ? 'agent-mode' : ''}`} onSubmit={(event) => { event.preventDefault(); sendMessage() }}>
+              <button
+                className={`composer-mic ${isListening ? 'listening' : ''}`}
+                type="button"
+                onClick={toggleListening}
+                aria-label={isListening ? 'Stop recording and transcribe' : 'Start voice conversation'}
+                aria-pressed={isListening}
+              >
+                <span className="mic-icon" aria-hidden="true" />
+                {isListening && <span className="mic-ripple" aria-hidden="true" />}
+              </button>
+              <input
+                ref={pdfInputRef}
+                className="pdf-input"
+                type="file"
+                accept="application/pdf,.pdf"
+                onChange={handlePdfChange}
+                aria-label="Attach PDF"
+              />
+              <button
+                className={`composer-attach ${pdfFile ? 'active' : ''}`}
+                type="button"
+                onClick={() => pdfInputRef.current?.click()}
+                disabled={isThinking}
+                aria-label={pdfFile ? 'Replace attached PDF' : 'Attach PDF'}
+                title={pdfFile ? 'Replace PDF' : 'Attach PDF'}
+              >
+                <span className="attach-icon" aria-hidden="true" />
+              </button>
+              <label className={`composer-input ${agentMode ? 'agent-input' : ''}`}>
+                {agentMode && <span className="agent-composer-badge" title="Nexa agent will handle this request" aria-label="Nexa agent enabled"><Logo /></span>}
+                <input
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder={isListening ? 'Listening...' : agentMode ? 'Ask Nexa to handle this...' : pdfFile ? 'Ask about the attached PDF' : sharedSessionActive ? 'Message members or start with @Agent' : 'Message Nexa'}
+                  aria-label="Message Nexa"
+                />
+                <small>{isListening ? "Speak naturally - I'll stop when you pause" : agentMode ? 'Nexa agent will respond to this request' : pdfFile ? 'Prefix with Remember: to save this document permanently' : sharedSessionActive ? 'Messages go to session members. Use @Agent to call Nexa.' : 'Nexa will respond in this private session.'}</small>
+              </label>
+              <div className="composer-help-shell" ref={composerHelpRef}>
+                <button
+                  className={`composer-help-button ${composerHelpOpen ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => setComposerHelpOpen((open) => !open)}
+                  aria-label="Open chat help"
+                  aria-expanded={composerHelpOpen}
+                  title="Chat help"
+                >
+                  /
+                </button>
+                {composerHelpOpen && (
+                  <section className="composer-help-panel" aria-label="Chat help">
+                    <div className="composer-help-heading">
+                      <CircleHelp size={16} />
+                      <strong>Chat commands</strong>
+                    </div>
+                    <div className="composer-help-list">
+                      <button type="button" onClick={() => insertComposerCommand('@Agent ')}>
+                        <code>@Agent</code>
+                        <span>Call Nexa in chats with multiple members.</span>
+                      </button>
+                      {!sharedSessionActive && (
+                        <div className="composer-help-row">
+                          <code>Private</code>
+                          <span>This session sends every message to Nexa automatically.</span>
+                        </div>
+                      )}
+                      <button type="button" onClick={() => insertComposerCommand(sharedSessionActive ? '@Agent Remember: ' : 'Remember: ')}>
+                        <code>Remember:</code>
+                        <span>Save an attached PDF into your document memory.</span>
+                      </button>
+                      <button type="button" onClick={() => insertComposerCommand(sharedSessionActive ? '@Agent Doc: ' : 'Doc: ')}>
+                        <code>Doc:</code>
+                        <span>Search your saved documents and answer from them.</span>
+                      </button>
+                      <div className="composer-help-row">
+                        <code>Reply</code>
+                        <span>Reply to a message, then ask Nexa to summarize, draft, or fact-check it.</span>
+                      </div>
+                      <div className="composer-help-row">
+                        <code>Private tools</code>
+                        <span>Gmail, Drive, and Calendar results stay private in shared chats.</span>
+                      </div>
+                    </div>
+                  </section>
+                )}
+              </div>
+              <button
+                className="send-button"
+                type="submit"
+                disabled={!input.trim() || isThinking}
+                aria-label="Send message"
+              >
+                <span aria-hidden="true">↑</span>
+              </button>
+            </form>
+
+            <p className="voice-note">
+              <span className={`status-dot ${voiceReplies ? '' : 'offline'}`} />
+              Spoken responses are {voiceReplies ? 'enabled for voice requests' : 'turned off'}
+            </p>
+          </footer>
+        </section>
+
+        <aside className={`activity-rail ${rightPanelOpen ? 'mobile-open' : ''}`}>
+          <AmbientParticles id="nexa-particles-sidebar-right" className="sidebar-particles" compact />
+          <button className="mobile-drawer-close" type="button" onClick={() => setRightPanelOpen(false)} aria-label="Close tasks"><X size={18} /></button>
+          <div className="todo-card todo-card-primary right-todo-card">
+            <div className="rail-heading todo-heading"><div><p className="section-label">PERSONAL TASKS</p><h2>Todo list</h2></div><div className="todo-heading-actions"><span className="todo-count">{todos.filter((task) => !task.completed).length}</span><button type="button" className="todo-plus-button" onClick={startAddingTodo} disabled={isAddingTodo}>+</button></div></div>
+            <div className="todo-list-shell"><form className="todo-list" onSubmit={createTodo}>
+              {todos.slice(0, 8).map((task) => <div className={`todo-item ${task.completed ? 'completed' : ''}`} key={task.id}><button type="button" className="todo-check" onClick={() => updateTodo(task, 'complete')} disabled={task.completed}>{task.completed ? '✓' : ''}</button><div><strong>{task.task}</strong>{task.due && <small>{task.due}</small>}</div><button type="button" className="todo-remove" onClick={() => updateTodo(task, 'remove')}>&times;</button></div>)}
+              {isAddingTodo && <div className="todo-item todo-item-draft"><span className="todo-draft-marker" /><div className="todo-inline-editor"><input ref={todoDraftRef} className="todo-inline-task" value={todoDraft} onChange={(event) => setTodoDraft(event.target.value)} placeholder="Write your task..." /><input className="todo-inline-due" value={todoDueDraft} onChange={(event) => setTodoDueDraft(event.target.value)} placeholder="Optional time or date" /></div><div className="todo-inline-actions"><button type="submit" className="todo-inline-save" disabled={!todoDraft.trim() || todoBusy}>{todoBusy ? 'Saving...' : 'Save'}</button><button type="button" className="todo-inline-cancel" onClick={cancelAddingTodo} disabled={todoBusy}>&times;</button></div></div>}
+              {todos.length === 0 && !isAddingTodo && <p className="todo-empty">Click + to add a task.</p>}
+            </form></div>
+          </div>
+          <div className="rail-heading">
+            <div>
+              <p className="section-label">AGENT ACTIVITY</p>
+              <h2>Live trace</h2>
+            </div>
+            <span className={`trace-state ${isThinking ? 'active' : ''}`}>
+              {isThinking ? 'LIVE' : 'IDLE'}
+            </span>
+          </div>
+
+          <div className="activity-card">
+            <div className="activity-current">
+              <span className={`activity-orb ${isThinking ? 'active' : ''}`} />
+              <div>
+                <small>CURRENT OPERATION</small>
+                <strong>{thinkingStatus || 'Standing by'}</strong>
+              </div>
+            </div>
+
+            {thinkingEvents.length > 0 ? (
+              <div className="activity-timeline">
+                {thinkingEvents.map((event, index) => (
+                  <div className="activity-event" key={event.id}>
+                    <span className={`timeline-node ${index === thinkingEvents.length - 1 && isThinking ? 'current' : ''}`} />
+                    <div>
+                      <small>{event.stage}</small>
+                      <strong>{event.message}</strong>
+                      {event.detail && <p>{event.detail}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="activity-idle">
+                <span className="idle-line" />
+                <p>Agent decisions and tool calls will appear here in real time.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="connected-apps-card">
+            <div className="connected-apps-heading">
+              <div>
+                <p className="section-label">CONNECTED APPS</p>
+                <h3>Google workspace</h3>
+              </div>
+              <span className="connected-apps-badge">
+                {googleServices.filter((service) => service.connected).length}/{Math.max(googleServices.length, 3)}
+              </span>
+            </div>
+
+            <div className="connected-apps-list">
+              {googleServices.map((service) => (
+                <div className="google-service-card" key={service.service}>
+                  <div className="google-service-topline">
+                    <div className="google-service-copy">
+                      <strong>{service.label}</strong>
+                      <small>{service.connected ? `Connected${service.email ? ` · ${service.email}` : ''}` : 'Not connected'}</small>
+                    </div>
+                    <span className={`google-service-state ${service.connected ? 'connected' : ''}`}>
+                      {service.connected ? 'Active' : 'Ready'}
+                    </span>
+                  </div>
+
+                  <div className="google-service-actions">
+                    {service.connected ? (
+                      <button
+                        className="google-service-button disconnect"
+                        type="button"
+                        onClick={() => disconnectGoogleService(service.service)}
+                        disabled={googleActionBusy === service.service}
+                      >
+                        {googleActionBusy === service.service ? 'Disconnecting...' : 'Disconnect'}
+                      </button>
+                    ) : (
+                      <button
+                        className="google-service-button"
+                        type="button"
+                        onClick={() => connectGoogleService(service.service)}
+                        title={service.configured ? `Connect ${service.label}` : `Connect ${service.label} (setup will be validated by the backend)`}
+                      >
+                        Connect {service.label}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {googleServices.length === 0 && (
+                <div className="google-service-card google-service-empty">
+                  <div className="google-service-copy">
+                    <strong>Google setup needed</strong>
+                    <small>Add OAuth values to `.env` to connect Gmail, Calendar, and Drive.</small>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* <div className="system-readout">
+            <p className="section-label">SYSTEM</p>
+            <div><span>Orchestrator</span><strong>LangGraph</strong></div>
+            <div><span>Reasoning</span><strong>Qwen</strong></div>
+            <div><span>Search</span><strong className="ready">Ready</strong></div>
+            <div><span>Speech</span><strong className="ready">Local</strong></div>
+          </div> */}
+
+          <div className="capability-stack">
+            <p className="section-label">CAPABILITIES</p>
+            {capabilities.local.map((capability) => (
+              <div className="capability" key={capability.id}>
+                <span
+                  className={`capability-icon ${
+                    capability.id === 'web'
+                      ? 'search-icon'
+                      : capability.id === 'voice'
+                        ? 'voice-icon'
+                        : capability.id === 'email'
+                          ? 'mail-icon'
+                          : 'action-icon'
+                  }`}
+                  aria-hidden="true"
+                />
+                <div>
+                  <strong>{capability.label}</strong>
+                  <small>{capability.description}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="capability-stack">
+            <p className="section-label">CONNECTED TOOLS</p>
+            {googleServices.map((service) => (
+              <div className="capability google-service" key={service.service}>
+                <span className="capability-icon mail-icon" aria-hidden="true" />
+                <div>
+                  <strong>{service.label}</strong>
+                  <small>{service.connected ? `Connected${service.email ? ` · ${service.email}` : ''}` : 'Not connected'}</small>
+                </div>
+                {service.connected ? (
+                  <button
+                    className="google-service-button disconnect"
+                    type="button"
+                    onClick={() => disconnectGoogleService(service.service)}
+                    disabled={googleActionBusy === service.service}
+                  >
+                    {googleActionBusy === service.service ? '...' : 'Disconnect'}
+                  </button>
+                ) : (
+                  <button
+                    className="google-service-button"
+                    type="button"
+                    onClick={() => connectGoogleService(service.service)}
+                    title={service.configured ? `Connect ${service.label}` : `Connect ${service.label} (setup will be validated by the backend)`}
+                  >
+                    Connect
+                  </button>
+                )}
+              </div>
+            ))}
+            {googleServices.length === 0 && (
+              <div className="capability">
+                <span className="capability-icon action-icon" aria-hidden="true" />
+                <div><strong>Google setup needed</strong><small>Add OAuth values to .env to connect apps</small></div>
+              </div>
+            )}
+            {mcpServers.filter((server) => server.active && !server.oauth_service).map((server) => (
+              <div className="capability" key={server.name}>
+                <span className="capability-icon action-icon" aria-hidden="true" />
+                <div><strong>{server.label}</strong><small>{server.read_only ? 'Read-only access' : 'Interactive access'}</small></div>
+              </div>
+            ))}
+          </div>
+
+          <p className="rail-footer">
+            <span className="lock-icon" aria-hidden="true" />
+            Local agent - Private session
+          </p>
+        </aside>
+      </section>
+    </main>
+  )
+}
+
+export default App
