@@ -23,7 +23,7 @@ from Backend.GoogleOAuth import (
 )
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "Data"
 DEFAULT_CONFIG_PATH = ROOT / ".mcp.json"
 PENDING_ACTIONS_PATH = DATA_DIR / "PendingMCPActions.json"

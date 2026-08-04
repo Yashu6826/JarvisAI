@@ -27,7 +27,7 @@ run only the local model.
 
 ## 2. Install Python packages
 
-Run: `.venv\Scripts\python.exe -m pip install -r Requirements.txt`
+Run: `..\.venv\Scripts\python.exe -m pip install -r Requirements.txt` from `Backend`.
 
 ## 3. Start LM Studio fallback
 
@@ -55,7 +55,7 @@ The owner profile questions use embeddings over `Resume_Yashraj.pdf`.
 
    `python -m Backend.OwnerRAG build --force`
 
-This creates `Data/OwnerRAG/index.json`, which stores resume chunks and their
+This creates `Backend/Data/OwnerRAG/index.json`, which stores resume chunks and their
 embedding vectors. Owner/creator questions automatically use this index.
 
 ## 4. Add offline voice recognition
@@ -82,7 +82,7 @@ Image generation may be slow and can use substantial system memory.
 
 Nexa supports per-browser OAuth connections to Gmail, Google Calendar, and
 Google Drive. Each browser authorizes its own Google account; access and refresh
-tokens are encrypted in `Data/GoogleConnections.json` and are never sent to the
+tokens are encrypted in `Backend/Data/GoogleConnections.json` and are never sent to the
 frontend.
 
 Gmail sending uses the Gmail API and the account connected in Nexa. No Gmail
@@ -95,7 +95,7 @@ updating, deleting, or responding to an event is held for UI approval.
 
 1. Install the dependencies:
 
-   `python -m pip install -r Requirements.txt`
+   `python -m pip install -r Backend/Requirements.txt`
 
 2. In Google Cloud, create an OAuth **Web application** client and add this
    authorized redirect URI for local development:
@@ -119,7 +119,7 @@ updating, deleting, or responding to an event is held for UI approval.
 
    `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 
-6. Restart `python WebApp.py`, then use the **Connect** buttons in Nexa’s
+6. Restart `python -m Backend.WebApp`, then use the **Connect** buttons in Nexa’s
    Connected Apps panel. Google will open a consent screen for each service.
 
 Nexa uses first-party Google API connectors. Connected-app actions that can
@@ -150,10 +150,10 @@ photos or crowd ratings.
 
 1. Add `OPENROUTER_API_KEY` in `.env`. Start LM Studio too if you want fallback,
    load the model configured in `.env`, and start its local server.
-2. Install Python dependencies: `pip install -r Requirements.txt`
+2. Install Python dependencies: `pip install -r Backend/Requirements.txt`
 3. Build the frontend once: `cd "Jarvis Frontend"` then `npm install` and `npm run build`
-4. From the project root, run: `.venv\Scripts\python.exe Main.py` (or
-   `.venv\Scripts\python.exe WebApp.py`). Direct launches also self-correct to
+4. From the project root, run: `.venv\Scripts\python.exe -m Backend.Main` (or
+   `.venv\Scripts\python.exe -m Backend.WebApp`). Direct launches also self-correct to
    the project environment when `.venv` exists.
 5. Open `http://127.0.0.1:8000`
 

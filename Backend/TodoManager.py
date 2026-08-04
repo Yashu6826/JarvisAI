@@ -12,7 +12,7 @@ from pathlib import Path
 from Backend.GoogleOAuth import current_session_id
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 TODO_FILE = ROOT / "Data" / "Todos.json"
 SESSION_DATA_DIR = ROOT / "Data" / "Sessions"
 _lock = threading.Lock()

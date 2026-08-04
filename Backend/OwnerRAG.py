@@ -18,7 +18,7 @@ from Backend.LLMProvider import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent
 RESUME_PATH = ROOT / "Resume_Yashraj.pdf"
 INDEX_PATH = ROOT / "Data" / "OwnerRAG" / "index.json"
 CHUNK_MAX_CHARS = 900

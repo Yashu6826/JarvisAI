@@ -21,7 +21,7 @@ _chat_session_id: ContextVar[str] = ContextVar("nexa_chat_session_id", default="
 _chat_user_id: ContextVar[str] = ContextVar("nexa_chat_user_id", default="")
 _client: MongoClient | None = None
 _database = None
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env", override=True)
 
 

@@ -11,7 +11,7 @@ import Backend.Chatbot as chatbot
 import Backend.EmailManager as email_manager
 import Backend.MCPManager as mcp_manager
 import Backend.TodoManager as todo_manager
-from WebApp import app
+from Backend.WebApp import app
 
 
 class BrowserSessionAPITests(unittest.TestCase):

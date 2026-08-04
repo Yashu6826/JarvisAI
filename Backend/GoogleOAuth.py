@@ -19,7 +19,7 @@ import requests
 from Backend.LLMProvider import get_config
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 DATA_PATH = ROOT / "Data" / "GoogleConnections.json"
 STATE_PATH = ROOT / "Data" / "GoogleOAuthStates.json"
 SESSION_COOKIE = "nexa_google_session"

@@ -42,7 +42,9 @@ from Backend.MCPManager import load_mcp_tools, mcp_status_snapshot
 
 logger = logging.getLogger("nexa.workflow")
 if not logger.handlers:
-    _workflow_handler = logging.FileHandler(Path(__file__).resolve().parent.parent / "logs" / "agent-workflow.log", encoding="utf-8")
+    _workflow_log_dir = Path(__file__).resolve().parent / "logs"
+    _workflow_log_dir.mkdir(exist_ok=True)
+    _workflow_handler = logging.FileHandler(_workflow_log_dir / "agent-workflow.log", encoding="utf-8")
     _workflow_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger.addHandler(_workflow_handler)
 logger.setLevel(logging.INFO)

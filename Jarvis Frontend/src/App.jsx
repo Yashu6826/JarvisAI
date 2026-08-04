@@ -758,7 +758,7 @@ function App() {
       }
     } catch (error) {
       setApiError(error.message === 'Failed to fetch'
-        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        ? 'Nexa API is offline. Start the backend and try again.'
         : error.message)
     } finally {
       setDeletingSessionId('')
@@ -1004,7 +1004,7 @@ function App() {
       setTodos((current) => [data.task, ...current])
     } catch (error) {
       setApiError(error.message === 'Failed to fetch'
-        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        ? 'Nexa API is offline. Start the backend and try again.'
         : error.message)
     } finally {
       setTodoBusy(false)
@@ -1100,7 +1100,7 @@ function App() {
       setIsOnline(true)
     } catch (error) {
       setApiError(error.message === 'Failed to fetch'
-        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        ? 'Nexa API is offline. Start the backend and try again.'
         : error.message)
     } finally {
       setEmailActionBusy('')
@@ -1145,7 +1145,7 @@ function App() {
       setIsOnline(true)
     } catch (error) {
       setApiError(error.message === 'Failed to fetch'
-        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        ? 'Nexa API is offline. Start the backend and try again.'
         : error.message)
     } finally {
       setMcpActionBusy('')
@@ -1202,7 +1202,7 @@ function App() {
         loadChatSessions().catch(() => {})
         setIsOnline(true)
       } catch (error) {
-        setApiError(error.message === 'Failed to fetch' ? 'Nexa API is offline. Start WebApp.py and try again.' : error.message)
+        setApiError(error.message === 'Failed to fetch' ? 'Nexa API is offline. Start the backend and try again.' : error.message)
         setIsOnline(false)
       }
       return
@@ -1390,7 +1390,7 @@ function App() {
       setIsOnline(true)
     } catch (error) {
       setApiError(error.message === 'Failed to fetch'
-        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        ? 'Nexa API is offline. Start the backend and try again.'
         : error.message)
       setIsOnline(false)
     } finally {
@@ -1557,7 +1557,7 @@ function App() {
         setIsOnline(true)
       } catch {
         setIsOnline(false)
-        setApiError('Nexa API is offline. Start WebApp.py to begin chatting.')
+        setApiError('Nexa API is offline. Start the backend to begin chatting.')
       }
     }
     loadNexa()
@@ -1632,7 +1632,7 @@ function App() {
       await sendMessage(data.transcript, { speakReply: true })
     } catch (error) {
       setMicError(error.message === 'Failed to fetch'
-        ? 'Nexa API is offline. Start WebApp.py and try again.'
+        ? 'Nexa API is offline. Start the backend and try again.'
         : error.message)
     }
   }, [sendMessage])
@@ -2406,7 +2406,7 @@ function App() {
                 <div className="google-service-card google-service-empty">
                   <div className="google-service-copy">
                     <strong>Google setup needed</strong>
-                    <small>Add OAuth values to `.env` to connect Gmail, Calendar, and Drive.</small>
+                    <small>Add OAuth values to the backend `.env` to connect Gmail, Calendar, and Drive.</small>
                   </div>
                 </div>
               )}
@@ -2478,7 +2478,7 @@ function App() {
             {googleServices.length === 0 && (
               <div className="capability">
                 <span className="capability-icon action-icon" aria-hidden="true" />
-                <div><strong>Google setup needed</strong><small>Add OAuth values to .env to connect apps</small></div>
+                <div><strong>Google setup needed</strong><small>Add OAuth values to the backend .env to connect apps</small></div>
               </div>
             )}
             {mcpServers.filter((server) => server.active && !server.oauth_service).map((server) => (
