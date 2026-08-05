@@ -58,7 +58,6 @@ from Backend.LiveDataConnectors import (
     weather_and_air_quality as connector_weather_and_air_quality,
 )
 from Backend.OwnerRAG import answer_owner_question
-from Backend.TodoManager import add_todo, complete_todo, list_todos, remove_todo
 from Backend.RealtimeSearchEngine import SearchWeb
 
 
@@ -1076,59 +1075,6 @@ def create_document(request: str, runtime: ToolRuntime) -> str:
 
 
 @tool
-def add_task(task: str, runtime: ToolRuntime, due: str = "") -> str:
-    """Add a task or reminder to NEXA's persistent local todo list."""
-    if not task.strip():
-        return json.dumps({"ok": False, "error": "The task was empty."})
-    if not _explicit_local_action_requested(
-        runtime,
-        r"\b(?:add|put|remember|remind|need to|task|to-do|todo)\b",
-    ):
-        return json.dumps({
-            "ok": False,
-            "error": "Adding a task requires an explicit user request.",
-        })
-    item = add_todo(task, due)
-    return json.dumps({"ok": True, "action": "add_task", "task": item}, ensure_ascii=False)
-
-
-@tool
-def get_tasks(include_completed: bool = False) -> str:
-    """Show tasks from the persistent local todo list."""
-    return json.dumps({"ok": True, "tasks": list_todos(include_completed)}, ensure_ascii=False)
-
-
-@tool
-def complete_task(task: str, runtime: ToolRuntime) -> str:
-    """Mark a todo complete by its id or a distinctive part of its text."""
-    if not _explicit_local_action_requested(
-        runtime,
-        r"\b(?:done|finished|complete|completed|mark)\b",
-    ):
-        return json.dumps({
-            "ok": False,
-            "error": "Completing a task requires an explicit user request.",
-        })
-    item = complete_todo(task)
-    return json.dumps({"ok": bool(item), "task": item, "error": None if item else "Task not found."}, ensure_ascii=False)
-
-
-@tool
-def remove_task(task: str, runtime: ToolRuntime) -> str:
-    """Remove a todo by its id or a distinctive part of its text."""
-    if not _explicit_local_action_requested(
-        runtime,
-        r"\b(?:remove|delete|clear)\b",
-    ):
-        return json.dumps({
-            "ok": False,
-            "error": "Removing a task requires an explicit user request.",
-        })
-    item = remove_todo(task)
-    return json.dumps({"ok": bool(item), "task": item, "error": None if item else "Task not found."}, ensure_ascii=False)
-
-
-@tool
 def get_capabilities() -> str:
     """Describe Nexa's live tools, connected services, and current availability."""
     from Backend.Capabilities import capability_snapshot
@@ -1170,8 +1116,4 @@ AGENT_TOOLS = [
     draft_email,
     send_email,
     create_document,
-    add_task,
-    get_tasks,
-    complete_task,
-    remove_task,
 ]

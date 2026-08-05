@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 import Backend.Chatbot as chatbot
 import Backend.EmailManager as email_manager
 import Backend.MCPManager as mcp_manager
-import Backend.TodoManager as todo_manager
 from Backend.WebApp import app
 
 
@@ -20,7 +19,6 @@ class BrowserSessionAPITests(unittest.TestCase):
         root = Path(self.temp_dir.name)
         self.patches = [
             patch.object(chatbot, "SESSION_DATA_DIR", root / "sessions"),
-            patch.object(todo_manager, "SESSION_DATA_DIR", root / "sessions"),
             patch.object(
                 email_manager,
                 "EMAIL_RECORDS_PATH",
@@ -39,16 +37,6 @@ class BrowserSessionAPITests(unittest.TestCase):
         for item in reversed(self.patches):
             item.stop()
         self.temp_dir.cleanup()
-
-    def test_todos_are_isolated_between_browser_sessions(self) -> None:
-        with TestClient(app) as browser_a, TestClient(app) as browser_b:
-            created = browser_a.post(
-                "/api/todos",
-                json={"task": "Private task", "due": "tomorrow"},
-            )
-            self.assertEqual(created.status_code, 200)
-            self.assertEqual(len(browser_a.get("/api/todos").json()["tasks"]), 1)
-            self.assertEqual(browser_b.get("/api/todos").json()["tasks"], [])
 
     def test_public_capabilities_do_not_expose_server_credentials(self) -> None:
         with TestClient(app) as browser:

@@ -74,14 +74,6 @@ LOCAL_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "side_effect": "explicit_request",
     },
     {
-        "id": "tasks",
-        "label": "Local tasks",
-        "description": "Add, list, complete, and remove persistent tasks. Tasks do not generate timed notifications.",
-        "category": "local_action",
-        "tools": ["add_task", "get_tasks", "complete_task", "remove_task"],
-        "side_effect": "explicit_request",
-    },
-    {
         "id": "owner_profile",
         "label": "Owner resume knowledge",
         "description": "Answer supported owner-profile questions from the local resume index.",
@@ -186,13 +178,6 @@ _CURRENCY_QUERY = re.compile(
     r"\b(?:convert|conversion|exchange rate|currency|forex|usd|inr|eur|gbp|jpy|cad|aud)\b",
     re.I,
 )
-_TASK_QUERY = re.compile(
-    (
-        r"\b(?:todo|to-do|task list|my tasks?|add .+ to (?:my )?list|remind me|"
-        r"i need to|mark .+ (?:done|complete)|complete task|remove task)\b"
-    ),
-    re.I,
-)
 _OWNER_QUERY = re.compile(
     (
         r"\b(?:yashraj|your owner|your creator|your developer|"
@@ -268,9 +253,6 @@ def select_tools_for_query(query: str, tools: Iterable[Any]) -> list[Any]:
 
     if _CURRENCY_QUERY.search(normalized):
         selected.add("convert_currency")
-
-    if _TASK_QUERY.search(normalized):
-        selected.update({"add_task", "get_tasks", "complete_task", "remove_task"})
 
     if _OWNER_QUERY.search(normalized):
         selected.add("answer_owner_profile")
@@ -352,7 +334,7 @@ def capability_prompt(
     lines = [
         "Live capability state:",
         "- Normal conversation and live public-web research are available.",
-        "- Local Windows actions, local tasks, local documents, voice, and owner-resume retrieval are available when relevant.",
+        "- Local Windows actions, local documents, voice, and owner-resume retrieval are available when relevant.",
     ]
     maps = next((item for item in snapshot["local"] if item["id"] == "maps"), None)
     if maps:
