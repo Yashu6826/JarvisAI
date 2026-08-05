@@ -1,8 +1,7 @@
 # Run NEXA Locally
 
-The language model and speech recognition run locally. The LangGraph agent can
-use public web search when a request needs live information or when it must
-discover an official website URL.
+The LangGraph agent can use public web search when a request needs live
+information or when it must discover an official website URL.
 
 ## 1. Create the local configuration
 
@@ -58,19 +57,7 @@ The owner profile questions use embeddings over `Resume_Yashraj.pdf`.
 This creates `Backend/Data/OwnerRAG/index.json`, which stores resume chunks and their
 embedding vectors. Owner/creator questions automatically use this index.
 
-## 4. Add voice support
-
-Voice transcription and spoken replies both use OpenRouter, so there is no local
-speech model to download or run. Set `OPENROUTER_API_KEY` and keep these values
-in `.env`:
-
-```env
-OPENROUTER_TTS_MODEL="fish-audio/s2.1-pro-free:free"
-OPENROUTER_STT_MODEL="openai/whisper-1"
-OPENROUTER_STT_LANGUAGE="en"
-```
-
-## 5. Optional local image generation
+## 4. Optional local image generation
 
 Install and start AUTOMATIC1111 Stable Diffusion WebUI with:
 webui-user.bat --api
@@ -79,7 +66,7 @@ It must listen at http://127.0.0.1:7860. On this 8 GB Intel Iris Xe laptop,
 start with 512x512, 15 steps, and batch size 1, as configured in .env.
 Image generation may be slow and can use substantial system memory.
 
-## 6. Google Workspace connections
+## 5. Google Workspace connections
 
 Nexa supports per-browser OAuth connections to Gmail, Google Calendar, and
 Google Drive. Each browser authorizes its own Google account; access and refresh
@@ -147,7 +134,7 @@ address, or neighbourhood instead. Geoapify is intentionally used only for
 read-only location data; its place results do not provide dependable venue
 photos or crowd ratings.
 
-## React voice-chat application
+## React chat application
 
 1. Add `OPENROUTER_API_KEY` in `.env`. Start LM Studio too if you want fallback,
    load the model configured in `.env`, and start its local server.

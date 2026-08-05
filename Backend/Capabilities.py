@@ -81,14 +81,6 @@ LOCAL_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "tools": ["answer_owner_profile"],
         "side_effect": "none",
     },
-    {
-        "id": "voice",
-        "label": "Voice interaction",
-        "description": "Transcribe microphone audio locally and speak replies in the browser.",
-        "category": "interface",
-        "tools": [],
-        "side_effect": "none",
-    },
 )
 
 
@@ -334,7 +326,7 @@ def capability_prompt(
     lines = [
         "Live capability state:",
         "- Normal conversation and live public-web research are available.",
-        "- Local Windows actions, local documents, voice, and owner-resume retrieval are available when relevant.",
+        "- Local Windows actions, local documents, and owner-resume retrieval are available when relevant.",
     ]
     maps = next((item for item in snapshot["local"] if item["id"] == "maps"), None)
     if maps:
