@@ -86,7 +86,6 @@ from Backend.MCPManager import (
     mcp_status_snapshot,
 )
 from Backend.SpeechToText import SpeechRecognition, TranscribePCM
-from Backend.TodoManager import add_todo, complete_todo, list_todos, remove_todo
 from Backend.MongoStore import (
     StoreUnavailable,
     active_participant_count,
@@ -257,11 +256,6 @@ class EmailConfirmRequest(BaseModel):
     recipient: str = ""
     cc: str = ""
     bcc: str = ""
-
-
-class TodoCreateRequest(BaseModel):
-    task: str = Field(min_length=1, max_length=500)
-    due: str = Field(default="", max_length=200)
 
 
 class PDFAnswerResponse(BaseModel):
@@ -660,22 +654,6 @@ def capabilities(request: Request) -> dict:
     return capability_snapshot(mcp_status_snapshot())
 
 
-@app.get("/api/todos")
-def todos(request: Request) -> dict:
-    _authenticated_user(request)
-    return {"tasks": list_todos(include_completed=True)}
-
-
-@app.post("/api/todos")
-def create_todo_api(payload: TodoCreateRequest, request: Request) -> dict:
-    _authenticated_user(request)
-    task = payload.task.strip()
-    due = payload.due.strip()
-    if not task:
-        raise HTTPException(status_code=422, detail="Task cannot be empty.")
-    return {"task": add_todo(task, due)}
-
-
 @app.get("/api/email/pending")
 def pending_email_api(request: Request) -> dict:
     return {"pending_email": get_latest_pending_email()}
@@ -830,22 +808,6 @@ def cancel_pending_mcp_action_api(action_id: str, request: Request) -> dict:
     with _chat_lock(request):
         SaveExchange(request_text, answer)
     return {"ok": True, "message": answer, "cancelled": result}
-
-
-@app.post("/api/todos/{task_id}/complete")
-def complete_todo_api(task_id: str, request: Request) -> dict:
-    item = complete_todo(task_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Task not found.")
-    return {"task": item}
-
-
-@app.delete("/api/todos/{task_id}")
-def remove_todo_api(task_id: str, request: Request) -> dict:
-    item = remove_todo(task_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Task not found.")
-    return {"removed": item}
 
 
 @app.delete("/api/history")

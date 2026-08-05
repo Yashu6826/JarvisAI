@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { CircleHelp, Command, Copy, Crown, FileText, History, Link2, ListTodo, Plus, Reply, Search, Share2, Sparkles, Trash2, UserMinus, Users, X } from 'lucide-react'
+import { CircleHelp, Command, Copy, Crown, FileText, History, Link2, Moon, Plus, Reply, Search, Share2, Sparkles, Sun, Trash2, UserMinus, Users, X } from 'lucide-react'
 import Particles, { ParticlesProvider } from '@tsparticles/react'
 import { loadSlim } from '@tsparticles/slim'
 import './App.css'
@@ -25,9 +25,12 @@ const suggestions = [
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
 const AUTH_TOKEN_KEY = 'nexa.auth.token'
+const THEME_KEY = 'nexa.theme'
 const LOCATION_CACHE_PREFIX = 'nexa.location.'
 const LOCATION_CACHE_TTL = 1000 * 60 * 30
 const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
+const AGENT_PREFIX_PATTERN = /^@agent(?:\b|$)[\s,:-]*/i
+const AGENT_PARTIAL_PATTERN = /^@a(?:g(?:e(?:n(?:t?)?)?)?)?$/i
 
 const locationRequestPattern = /\b(?:near me|around me|nearby|closest|nearest|from me|where am i|my location|directions?|route|distance|how far|how long|travel time|away|local|near my|restaurants?|cafes?|coffee shops?|hotels?|attractions?|pharmacies|hospitals?|gas stations?|petrol pumps?|atms?|parking|weather|forecast|traffic|places?)\b/i
 
@@ -46,6 +49,16 @@ function writeAuthToken(token = '') {
   } catch {
     // Auth still falls back to cookies when local storage is unavailable.
   }
+}
+
+function readThemePreference() {
+  try {
+    const stored = window.localStorage.getItem(THEME_KEY)
+    if (stored === 'light' || stored === 'dark') return stored
+  } catch {
+    // Theme still works for this session.
+  }
+  return 'dark'
 }
 
 function authHeaders(headers = {}) {
@@ -67,6 +80,14 @@ function formatMessageTime(value = new Date()) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(date)
+}
+
+function hasAgentMention(value = '') {
+  return AGENT_PREFIX_PATTERN.test(String(value).trimStart())
+}
+
+function stripAgentMention(value = '') {
+  return String(value).trimStart().replace(AGENT_PREFIX_PATTERN, '')
 }
 
 function startOfLocalDay(date) {
@@ -470,13 +491,7 @@ function AnswerCards({ message }) {
 }
 
 function Logo() {
-  return (
-    <div className="logo-mark" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-    </div>
-  )
+  return <img className="logo-mark" src="/NEXA.png" alt="" aria-hidden="true" />
 }
 
 const initialiseParticles = async (engine) => {
@@ -582,7 +597,7 @@ function AuthScreen({ onSignedIn }) {
     <h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
     <p>Sign in to save and revisit your chat sessions.</p>
     <button className="google-signin" type="button" onClick={() => window.location.assign(`${API_BASE}/api/auth/google`)}>
-      <span>G</span> Sign in with Google
+      <span><img src="/google.png" alt="Google" style = {{ width: '20px', height: '20px' }} /></span> Sign in with Google
     </button>
     <div className="auth-divider"><span>or</span></div>
     <form onSubmit={submit} className="auth-form">
@@ -611,11 +626,6 @@ function App() {
   const [thinkingDetail, setThinkingDetail] = useState('')
   const [thinkingEvents, setThinkingEvents] = useState([])
   const [liveAnswer, setLiveAnswer] = useState('')
-  const [todos, setTodos] = useState([])
-  const [isAddingTodo, setIsAddingTodo] = useState(false)
-  const [todoDraft, setTodoDraft] = useState('')
-  const [todoDueDraft, setTodoDueDraft] = useState('')
-  const [todoBusy, setTodoBusy] = useState(false)
   const [mcpServers, setMcpServers] = useState([])
   const [googleServices, setGoogleServices] = useState([])
   const [capabilities, setCapabilities] = useState({ local: [], google: [] })
@@ -650,13 +660,13 @@ function App() {
     updatedAt: 0,
   }))
   const [leftPanelOpen, setLeftPanelOpen] = useState(false)
-  const [rightPanelOpen, setRightPanelOpen] = useState(false)
+  const [theme, setTheme] = useState(readThemePreference)
   const feedRef = useRef(null)
+  const composerInputRef = useRef(null)
   const sessionSocketRef = useRef(null)
   const membersPanelRef = useRef(null)
   const composerHelpRef = useRef(null)
   const captureRef = useRef(null)
-  const todoDraftRef = useRef(null)
   const pdfInputRef = useRef(null)
   const locationPromptedRef = useRef('')
 
@@ -806,6 +816,15 @@ function App() {
   const sessionDayLabel = visibleMessageDay || (fallbackMessageDay ? formatMessageDay(fallbackMessageDay) : '')
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try {
+      window.localStorage.setItem(THEME_KEY, theme)
+    } catch {
+      // Theme preference persistence is optional.
+    }
+  }, [theme])
+
+  useEffect(() => {
     const feed = feedRef.current
     if (!feed) return undefined
 
@@ -835,6 +854,20 @@ function App() {
     if (!preview) return
     setReplyTarget(preview)
   }, [])
+
+  const activateAgentMention = useCallback(() => {
+    setInput((current) => {
+      const remainder = stripAgentMention(current)
+      return remainder ? `@Agent ${remainder}` : '@Agent '
+    })
+    window.requestAnimationFrame(() => composerInputRef.current?.focus())
+  }, [])
+
+  const clearAgentMention = useCallback(() => {
+    setInput((current) => stripAgentMention(current))
+    window.requestAnimationFrame(() => composerInputRef.current?.focus())
+  }, [])
+
   const insertComposerCommand = useCallback((command) => {
     setInput((current) => {
       const trimmed = current.trimStart()
@@ -911,15 +944,6 @@ function App() {
       else await createChatSession()
     } catch (error) { setApiError(error.message) }
   }, [acceptInviteFromUrl, createChatSession, loadChatSessions, openChatSession])
-
-  const loadTodos = useCallback(async () => {
-    try {
-      const response = await apiFetch(`${API_BASE}/api/todos`, { credentials: 'include' })
-      if (response.ok) setTodos((await response.json()).tasks || [])
-    } catch {
-      // The chat connection status already communicates backend availability.
-    }
-  }, [])
 
   const loadPendingEmail = useCallback(async () => {
     try {
@@ -1002,60 +1026,6 @@ function App() {
       // Secondary UI state.
     }
   }, [])
-
-  const updateTodo = async (task, action) => {
-    const endpoint = action === 'complete'
-      ? `${API_BASE}/api/todos/${task.id}/complete`
-      : `${API_BASE}/api/todos/${task.id}`
-    const response = await apiFetch(endpoint, {
-      method: action === 'complete' ? 'POST' : 'DELETE',
-      credentials: 'include',
-    })
-    if (response.ok) loadTodos()
-  }
-
-  const createTodo = useCallback(async (event) => {
-    event.preventDefault()
-    const task = todoDraft.trim()
-    const due = todoDueDraft.trim()
-    if (!task || todoBusy) return
-
-    setTodoBusy(true)
-    setApiError('')
-    try {
-      const response = await apiFetch(`${API_BASE}/api/todos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ task, due }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'Could not add the task.')
-
-      setIsAddingTodo(false)
-      setTodoDraft('')
-      setTodoDueDraft('')
-      setTodos((current) => [data.task, ...current])
-    } catch (error) {
-      setApiError(error.message === 'Failed to fetch'
-        ? 'Nexa API is offline. Start the backend and try again.'
-        : error.message)
-    } finally {
-      setTodoBusy(false)
-    }
-  }, [todoDraft, todoDueDraft, todoBusy])
-
-  const startAddingTodo = useCallback(() => {
-    if (todoBusy || isAddingTodo) return
-    setIsAddingTodo(true)
-  }, [todoBusy, isAddingTodo])
-
-  const cancelAddingTodo = useCallback(() => {
-    if (todoBusy) return
-    setIsAddingTodo(false)
-    setTodoDraft('')
-    setTodoDueDraft('')
-  }, [todoBusy])
 
   const speak = useCallback((text) => {
     if (!voiceReplies || !('speechSynthesis' in window)) return
@@ -1206,6 +1176,10 @@ function App() {
     const agentMatch = /^@agent\b[\s,:-]*(.+)$/is.exec(cleanMessage)
     const usesAgent = !sharedSession || Boolean(agentMatch)
     const agentPrompt = agentMatch ? agentMatch[1].trim() : cleanMessage
+    if (agentMatch && !agentPrompt) {
+      setApiError('Add a prompt after @Agent.')
+      return
+    }
     if ((attachedPdf || /^doc:\s*/i.test(agentPrompt)) && !usesAgent) {
       setApiError('Start AI and document requests with @Agent in shared sessions.')
       return
@@ -1394,7 +1368,6 @@ function App() {
           } else if (event.type === 'done') {
             completedAnswer = event.answer || ''
             skipChatMessage = Boolean(event.skip_chat)
-            loadTodos()
             streamFinished = true
             break
           }
@@ -1442,7 +1415,6 @@ function App() {
     chatSessions,
     pdfFile,
     speak,
-    loadTodos,
     loadPendingEmail,
     loadPendingMcpAction,
     applyPendingEmail,
@@ -1556,7 +1528,6 @@ function App() {
         }
         const [
           healthResponse,
-          todosResponse,
           pendingEmailResponse,
           mcpServersResponse,
           pendingMcpResponse,
@@ -1564,7 +1535,6 @@ function App() {
           capabilitiesResponse,
         ] = await Promise.all([
           apiFetch(`${API_BASE}/api/health`, { credentials: 'include' }),
-          apiFetch(`${API_BASE}/api/todos`, { credentials: 'include' }),
           apiFetch(`${API_BASE}/api/email/pending`, { credentials: 'include' }),
           apiFetch(`${API_BASE}/api/mcp/servers`, { credentials: 'include' }),
           apiFetch(`${API_BASE}/api/mcp/pending`, { credentials: 'include' }),
@@ -1572,7 +1542,6 @@ function App() {
           apiFetch(`${API_BASE}/api/capabilities`, { credentials: 'include' }),
         ])
         if (!healthResponse.ok) throw new Error()
-        if (todosResponse.ok) setTodos((await todosResponse.json()).tasks || [])
         if (pendingEmailResponse.ok) {
           applyPendingEmail((await pendingEmailResponse.json()).pending_email || null)
         }
@@ -1623,10 +1592,6 @@ function App() {
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, isThinking, liveAnswer, thinkingStatus])
-
-  useEffect(() => {
-    if (isAddingTodo) todoDraftRef.current?.focus()
-  }, [isAddingTodo])
 
   const stopCapture = useCallback(async () => {
     const capture = captureRef.current
@@ -1739,10 +1704,13 @@ function App() {
 
   const activeSession = chatSessions.find((session) => session.id === activeSessionId)
   const sharedSessionActive = Boolean(activeSession?.shared)
-  const agentMode = sharedSessionActive && /^@agent\b/i.test(input.trimStart())
+  const agentMode = sharedSessionActive && hasAgentMention(input)
+  const composerValue = agentMode ? stripAgentMention(input) : input
+  const agentSuggestionVisible = sharedSessionActive && !agentMode && AGENT_PARTIAL_PATTERN.test(input.trimStart())
+  const canSendMessage = agentMode ? Boolean(composerValue.trim()) : Boolean(input.trim())
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell theme-${theme}`}>
       <AmbientParticles />
       <header className="topbar">
         <a className="brand" href="/" aria-label="Nexa home">
@@ -1767,16 +1735,24 @@ function App() {
               return <button className={`navbar-google-button ${details?.connected ? 'connected' : ''}`} type="button" key={service} onClick={() => details?.connected ? disconnectGoogleService(service) : connectGoogleService(service)} disabled={googleActionBusy === service} title={details?.connected ? `${label} connected${details.email ? ` · ${details.email}` : ''}. Click to disconnect.` : `Connect ${label}`}><img src={`/${icon}`} alt="" /><span><b>{googleActionBusy === service ? '...' : label.replace('Google ', '')}</b><small>{details?.connected ? 'Connected' : 'Connect'}</small></span></button>
             })}
           </div>
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           {user ? <button className={`profile-button ${user.picture ? 'has-photo' : ''}`} type="button" data-email={user.email} title={user.email} aria-label={`Signed in as ${user.email}`}>{user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : (user.name?.trim()?.charAt(0)?.toUpperCase() || 'U')}</button> : <button className="profile-button" type="button" onClick={() => setAuthView(true)} aria-label="Sign in">?</button>}
         </div>
       </header>
 
       <div className="mobile-drawer-actions" aria-label="Mobile panels">
-        <button type="button" onClick={() => { setLeftPanelOpen(true); setRightPanelOpen(false) }} aria-label="Open chat sessions"><History size={18} /><span>Chats</span></button>
-        <button type="button" onClick={() => { setRightPanelOpen(true); setLeftPanelOpen(false) }} aria-label="Open todos"><ListTodo size={18} /><span>Tasks</span></button>
+        <button type="button" onClick={() => setLeftPanelOpen(true)} aria-label="Open chat sessions"><History size={18} /><span>Chats</span></button>
       </div>
 
-      {(leftPanelOpen || rightPanelOpen) && <button className="mobile-panel-scrim" type="button" aria-label="Close side panels" onClick={() => { setLeftPanelOpen(false); setRightPanelOpen(false) }} />}
+      {leftPanelOpen && <button className="mobile-panel-scrim" type="button" aria-label="Close side panels" onClick={() => setLeftPanelOpen(false)} />}
 
       <section className="command-layout">
         <aside className={`command-sidebar chat-sidebar ${leftPanelOpen ? 'mobile-open' : ''}`}>
@@ -1807,80 +1783,6 @@ function App() {
               {!user && <p>Send a message to sign in and start saving chats.</p>}
             </div>
           </div>
-          <div className="todo-card todo-card-primary">
-            <div className="rail-heading todo-heading">
-              <div><p className="section-label">PERSONAL TASKS</p><h2>Todo list</h2></div>
-              <div className="todo-heading-actions">
-                <span className="todo-count">{todos.filter((task) => !task.completed).length}</span>
-                <button
-                  type="button"
-                  className="todo-plus-button"
-                  onClick={startAddingTodo}
-                  disabled={isAddingTodo}
-                  aria-label="Add new task"
-                  title="Add new task"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <div className="todo-list-shell">
-              {todos.length === 0 && !isAddingTodo ? <p className="todo-empty">Click + or say "add to my tasks..." to get started.</p> : (
-                <form className="todo-list" onSubmit={createTodo}>
-                  {todos.slice(0, 8).map((task) => (
-                    <div className={`todo-item ${task.completed ? 'completed' : ''}`} key={task.id}>
-                      <button type="button" className="todo-check" onClick={() => updateTodo(task, 'complete')} disabled={task.completed} aria-label={`Complete ${task.task}`}>{task.completed ? '✓' : ''}</button>
-                      <div><strong>{task.task}</strong>{task.due && <small>{task.due}</small>}</div>
-                      <button type="button" className="todo-remove" onClick={() => updateTodo(task, 'remove')} aria-label={`Remove ${task.task}`}>&times;</button>
-                    </div>
-                  ))}
-
-                  {isAddingTodo && (
-                    <div className="todo-item todo-item-draft">
-                      <span className="todo-draft-marker" aria-hidden="true" />
-                      <div className="todo-inline-editor">
-                        <input
-                          ref={todoDraftRef}
-                          className="todo-inline-task"
-                          value={todoDraft}
-                          onChange={(event) => setTodoDraft(event.target.value)}
-                          placeholder="Write your task..."
-                          aria-label="New task"
-                        />
-                        <input
-                          className="todo-inline-due"
-                          value={todoDueDraft}
-                          onChange={(event) => setTodoDueDraft(event.target.value)}
-                          placeholder="Optional time or date"
-                          aria-label="Task due date or time"
-                        />
-                      </div>
-                      <div className="todo-inline-actions">
-                        <button
-                          type="submit"
-                          className="todo-inline-save"
-                          disabled={!todoDraft.trim() || todoBusy}
-                        >
-                          {todoBusy ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          type="button"
-                          className="todo-inline-cancel"
-                          onClick={cancelAddingTodo}
-                          disabled={todoBusy}
-                          aria-label="Cancel new task"
-                        >
-                          &times;
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </form>
-              )}
-            </div>
-          </div>
-
           {/* <div className="core-card core-card-bottom">
             <div className={`core-visual ${isThinking ? 'processing' : ''} ${isListening ? 'listening' : ''}`}>
               <span className="core-ring ring-one" />
@@ -2268,13 +2170,47 @@ function App() {
                 <span className="attach-icon" aria-hidden="true" />
               </button>
               <label className={`composer-input ${agentMode ? 'agent-input' : ''}`}>
-                {agentMode && <span className="agent-composer-badge" title="Nexa agent will handle this request" aria-label="Nexa agent enabled"><Logo /></span>}
+                {agentMode && (
+                  <button
+                    className="agent-composer-badge"
+                    type="button"
+                    onClick={clearAgentMention}
+                    title="Remove agent mention"
+                  aria-label="Remove agent mention"
+                >
+                  <Logo />
+                </button>
+              )}
                 <input
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
+                  ref={composerInputRef}
+                  value={composerValue}
+                  onChange={(event) => setInput(agentMode ? `@Agent ${event.target.value}` : event.target.value)}
+                  onKeyDown={(event) => {
+                    if (agentSuggestionVisible && (event.key === 'Enter' || event.key === 'Tab' || event.key === 'ArrowDown')) {
+                      event.preventDefault()
+                      activateAgentMention()
+                    } else if (agentMode && !composerValue && event.key === 'Backspace') {
+                      event.preventDefault()
+                      clearAgentMention()
+                    }
+                  }}
                   placeholder={isListening ? 'Listening...' : agentMode ? 'Ask Nexa to handle this...' : pdfFile ? 'Ask about the attached PDF' : sharedSessionActive ? 'Message members or start with @Agent' : 'Message Nexa'}
                   aria-label="Message Nexa"
                 />
+                {agentSuggestionVisible && (
+                  <button
+                    className="agent-mention-suggestion"
+                    type="button"
+                    onClick={activateAgentMention}
+                    aria-label="Use agent mention"
+                  >
+                    <span className="agent-mention-suggestion-logo"><Logo /></span>
+                    <span className="agent-mention-suggestion-copy">
+                      <strong>@Convo with Nexa</strong>
+                      {/* <small>Ask Nexa to handle this message</small> */}
+                    </span>
+                  </button>
+                )}
                 <small>{isListening ? "Speak naturally - I'll stop when you pause" : agentMode ? 'Nexa agent will respond to this request' : pdfFile ? 'Prefix with Remember: to save this document permanently' : sharedSessionActive ? 'Messages go to session members. Use @Agent to call Nexa.' : 'Nexa will respond in this private session.'}</small>
               </label>
               <div className="composer-help-shell" ref={composerHelpRef}>
@@ -2328,10 +2264,10 @@ function App() {
               <button
                 className="send-button"
                 type="submit"
-                disabled={!input.trim() || isThinking}
+                disabled={!canSendMessage || isThinking}
                 aria-label="Send message"
               >
-                <span aria-hidden="true">↑</span>
+                <img src="/send-button.png" alt="" aria-hidden="true" />
               </button>
             </form>
 
@@ -2341,18 +2277,8 @@ function App() {
             </p>
           </footer>
         </section>
-
-        <aside className={`activity-rail ${rightPanelOpen ? 'mobile-open' : ''}`}>
+        <aside className="activity-rail">
           <AmbientParticles id="nexa-particles-sidebar-right" className="sidebar-particles" compact />
-          <button className="mobile-drawer-close" type="button" onClick={() => setRightPanelOpen(false)} aria-label="Close tasks"><X size={18} /></button>
-          <div className="todo-card todo-card-primary right-todo-card">
-            <div className="rail-heading todo-heading"><div><p className="section-label">PERSONAL TASKS</p><h2>Todo list</h2></div><div className="todo-heading-actions"><span className="todo-count">{todos.filter((task) => !task.completed).length}</span><button type="button" className="todo-plus-button" onClick={startAddingTodo} disabled={isAddingTodo}>+</button></div></div>
-            <div className="todo-list-shell"><form className="todo-list" onSubmit={createTodo}>
-              {todos.slice(0, 8).map((task) => <div className={`todo-item ${task.completed ? 'completed' : ''}`} key={task.id}><button type="button" className="todo-check" onClick={() => updateTodo(task, 'complete')} disabled={task.completed}>{task.completed ? '✓' : ''}</button><div><strong>{task.task}</strong>{task.due && <small>{task.due}</small>}</div><button type="button" className="todo-remove" onClick={() => updateTodo(task, 'remove')}>&times;</button></div>)}
-              {isAddingTodo && <div className="todo-item todo-item-draft"><span className="todo-draft-marker" /><div className="todo-inline-editor"><input ref={todoDraftRef} className="todo-inline-task" value={todoDraft} onChange={(event) => setTodoDraft(event.target.value)} placeholder="Write your task..." /><input className="todo-inline-due" value={todoDueDraft} onChange={(event) => setTodoDueDraft(event.target.value)} placeholder="Optional time or date" /></div><div className="todo-inline-actions"><button type="submit" className="todo-inline-save" disabled={!todoDraft.trim() || todoBusy}>{todoBusy ? 'Saving...' : 'Save'}</button><button type="button" className="todo-inline-cancel" onClick={cancelAddingTodo} disabled={todoBusy}>&times;</button></div></div>}
-              {todos.length === 0 && !isAddingTodo && <p className="todo-empty">Click + to add a task.</p>}
-            </form></div>
-          </div>
           <div className="rail-heading">
             <div>
               <p className="section-label">AGENT ACTIVITY</p>
@@ -2539,3 +2465,6 @@ function App() {
 }
 
 export default App
+
+
+

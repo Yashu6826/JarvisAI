@@ -27,10 +27,6 @@ class CapabilityRoutingTests(unittest.TestCase):
             "get_power_and_wifi_status",
             "draft_email",
             "send_email",
-            "add_task",
-            "get_tasks",
-            "complete_task",
-            "remove_task",
             "google_drive_search_files",
             "google_drive_read_file_content",
             "google_calendar_list_events",
@@ -75,10 +71,6 @@ class CapabilityRoutingTests(unittest.TestCase):
         )
         self.assertIn("google_drive_read_file_content", selected)
         self.assertIn("google_calendar_create_event", selected)
-
-    def test_natural_task_phrase_routes_todo_tools(self) -> None:
-        selected = self.selected("I need to submit the report tomorrow")
-        self.assertIn("add_task", selected)
 
     def test_opening_youtube_does_not_expose_desktop_mutations(self) -> None:
         selected = self.selected("Open YouTube")
