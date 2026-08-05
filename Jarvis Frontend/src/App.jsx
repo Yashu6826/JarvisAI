@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { CircleHelp, Command, Copy, Crown, FileText, History, Link2, Moon, Plus, Reply, Search, Share2, Sparkles, Sun, Trash2, UserMinus, Users, X } from 'lucide-react'
+import { CircleHelp, Command, Copy, Crown, FileText, History, Link2, Moon, Plus, Reply, Search, SendHorizontal, Share2, Sparkles, Sun, Trash2, UserMinus, Users, X } from 'lucide-react'
 import Particles, { ParticlesProvider } from '@tsparticles/react'
 import { loadSlim } from '@tsparticles/slim'
 import './App.css'
@@ -1189,9 +1189,28 @@ function App() {
     setApiError('')
     if (!usesAgent) {
       try {
-        const socket = sessionSocketRef.current
-        if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Live chat is reconnecting. Please send again in a moment.')
-        socket.send(JSON.stringify({ type: 'message', content: cleanMessage, ...(selectedReply ? { reply_to_id: selectedReply.id } : {}) }))
+        const response = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ message: cleanMessage, ...(selectedReply ? { reply_to_id: selectedReply.id } : {}) }),
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.detail || 'Could not send the message.')
+        if (data.message) {
+          const incoming = messageWithDocumentReference(data.message, data.message.id)
+          setMessages((current) => {
+            const optimisticIndex = [...current].reverse().findIndex((message) => (
+              message.role === 'user' && message.text === incoming.text && !message.senderName && !message.sender_user_id
+            ))
+            if (optimisticIndex < 0) {
+              if (current.some((message) => String(message.id) === String(incoming.id))) return current
+              return [...current, incoming]
+            }
+            const index = current.length - optimisticIndex - 1
+            return current.map((message, itemIndex) => itemIndex === index ? incoming : message)
+          })
+        }
         loadChatSessions().catch(() => {})
         setIsOnline(true)
       } catch (error) {
@@ -1478,6 +1497,26 @@ function App() {
       sessionSocketRef.current = null
     }
   }, [activeSessionId, createChatSession, loadChatSessions, loadParticipants, openChatSession, user])
+
+  useEffect(() => {
+    if (!user || !activeSessionId) return undefined
+    const isSharedSession = Boolean(chatSessions.find((session) => session.id === activeSessionId)?.shared)
+    if (!isSharedSession) return undefined
+    let refreshing = false
+    const refreshMessages = async () => {
+      if (refreshing) return
+      refreshing = true
+      try {
+        await openChatSession(activeSessionId)
+      } catch (error) {
+        if (error.status === 404) setApiError('This chat session is no longer available.')
+      } finally {
+        refreshing = false
+      }
+    }
+    const timer = window.setInterval(refreshMessages, 4000)
+    return () => window.clearInterval(timer)
+  }, [activeSessionId, chatSessions, openChatSession, user])
 
   useEffect(() => {
     if (!membersOpen && !composerHelpOpen) return undefined
@@ -2129,8 +2168,9 @@ function App() {
                 type="submit"
                 disabled={!canSendMessage || isThinking}
                 aria-label="Send message"
+                title="Send"
               >
-                <img src="/send-button.png" alt="" aria-hidden="true" />
+                <SendHorizontal size={18} strokeWidth={2.35} aria-hidden="true" />
               </button>
             </form>
 
