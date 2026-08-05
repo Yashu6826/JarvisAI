@@ -616,12 +616,9 @@ function AuthScreen({ onSignedIn }) {
 function App() {
   const [messages, setMessages] = useState(starterMessages)
   const [input, setInput] = useState('')
-  const [isListening, setIsListening] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
-  const [micError, setMicError] = useState('')
   const [apiError, setApiError] = useState('')
   const [isOnline, setIsOnline] = useState(false)
-  const [voiceReplies] = useState(true)
   const [thinkingStatus, setThinkingStatus] = useState('')
   const [thinkingDetail, setThinkingDetail] = useState('')
   const [thinkingEvents, setThinkingEvents] = useState([])
@@ -666,8 +663,6 @@ function App() {
   const sessionSocketRef = useRef(null)
   const membersPanelRef = useRef(null)
   const composerHelpRef = useRef(null)
-  const captureRef = useRef(null)
-  const audioPlaybackRef = useRef({ audio: null, url: '' })
   const pdfInputRef = useRef(null)
   const locationPromptedRef = useRef('')
 
@@ -1028,54 +1023,6 @@ function App() {
     }
   }, [])
 
-  const stopSpokenReply = useCallback(() => {
-    const current = audioPlaybackRef.current
-    if (current.audio) {
-      current.audio.pause()
-      current.audio.src = ''
-    }
-    if (current.url) URL.revokeObjectURL(current.url)
-    audioPlaybackRef.current = { audio: null, url: '' }
-  }, [])
-
-  const speak = useCallback((text) => {
-    if (!voiceReplies || !text?.trim()) return
-    stopSpokenReply()
-    ;(async () => {
-      try {
-        const response = await apiFetch(`${API_BASE}/api/speech`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ text }),
-        })
-        if (!response.ok) {
-          let detail = 'Nexa could not generate the spoken reply.'
-          try {
-            const data = await response.json()
-            detail = data.detail || detail
-          } catch {
-            detail = await response.text() || detail
-          }
-          throw new Error(detail)
-        }
-        const blob = await response.blob()
-        const url = URL.createObjectURL(blob)
-        const audio = new Audio(url)
-        audioPlaybackRef.current = { audio, url }
-        audio.onended = () => {
-          if (audioPlaybackRef.current.audio === audio) stopSpokenReply()
-        }
-        await audio.play()
-      } catch (error) {
-        stopSpokenReply()
-        setMicError(error.message === 'Failed to fetch'
-          ? 'Nexa speech service is offline.'
-          : error.message || 'Nexa could not play the spoken reply.')
-      }
-    })()
-  }, [stopSpokenReply, voiceReplies])
-
   const clearPdfAttachment = useCallback(() => {
     setPdfFile(null)
     if (pdfInputRef.current) pdfInputRef.current.value = ''
@@ -1197,9 +1144,8 @@ function App() {
     }
   }, [pendingMcpAction, mcpActionBusy, loadPendingMcpAction])
 
-  const sendMessage = useCallback(async (value = input, options = {}) => {
+  const sendMessage = useCallback(async (value = input) => {
     const cleanMessage = value.trim()
-    const shouldSpeakReply = Boolean(options.speakReply)
     if (!cleanMessage || isThinking) return
     if (!user) {
       setAuthView(true)
@@ -1240,7 +1186,6 @@ function App() {
     if (attachedPdf) clearPdfAttachment()
     setInput('')
     setReplyTarget(null)
-    setMicError('')
     setApiError('')
     if (!usesAgent) {
       try {
@@ -1303,7 +1248,6 @@ function App() {
             pdfCitations: data.citations || [],
           },
         }])
-        if (shouldSpeakReply) speak(completedAnswer)
         clearPdfAttachment()
         loadChatSessions().catch(() => {})
         setIsOnline(true)
@@ -1335,7 +1279,6 @@ function App() {
           createdAt: answerCreatedAt,
           cards: { document: data.document || null, pdfCitations: citations },
         }])
-        if (shouldSpeakReply) speak(completedAnswer)
         loadChatSessions().catch(() => {})
         setIsOnline(true)
         return
@@ -1431,7 +1374,6 @@ function App() {
           time: formatMessageTime(answerCreatedAt),
           createdAt: answerCreatedAt,
         }])
-        if (shouldSpeakReply) speak(completedAnswer)
         loadChatSessions().catch(() => {})
       }
       setIsOnline(true)
@@ -1454,7 +1396,6 @@ function App() {
     activeSessionId,
     chatSessions,
     pdfFile,
-    speak,
     loadPendingEmail,
     loadPendingMcpAction,
     applyPendingEmail,
@@ -1633,115 +1574,6 @@ function App() {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, isThinking, liveAnswer, thinkingStatus])
 
-  useEffect(() => stopSpokenReply, [stopSpokenReply])
-
-  const stopCapture = useCallback(async () => {
-    const capture = captureRef.current
-    if (!capture) return
-    captureRef.current = null
-    window.clearTimeout(capture.timeout)
-    capture.processor.disconnect()
-    capture.silence.disconnect()
-    capture.source.disconnect()
-    capture.stream.getTracks().forEach((track) => track.stop())
-    await capture.context.close()
-    setIsListening(false)
-
-    try {
-      const length = capture.chunks.reduce((total, chunk) => total + chunk.length, 0)
-      const pcm = new Int16Array(length)
-      let offset = 0
-      for (const chunk of capture.chunks) {
-        for (let index = 0; index < chunk.length; index += 1) {
-          pcm[offset + index] = Math.max(-1, Math.min(1, chunk[index])) * 0x7fff
-        }
-        offset += chunk.length
-      }
-      const bytes = new Uint8Array(pcm.buffer)
-      let binary = ''
-      for (let index = 0; index < bytes.length; index += 8192) {
-        binary += String.fromCharCode(...bytes.subarray(index, index + 8192))
-      }
-
-      setMicError('Transcribing your voice with Nexa...')
-      const response = await apiFetch(`${API_BASE}/api/transcribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ audio: btoa(binary), sample_rate: capture.sampleRate }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'Voice recognition failed.')
-      setInput(data.transcript)
-      setMicError('')
-      await sendMessage(data.transcript, { speakReply: true })
-    } catch (error) {
-      setMicError(error.message === 'Failed to fetch'
-        ? 'Nexa API is offline. Start the backend and try again.'
-        : error.message)
-    }
-  }, [sendMessage])
-
-  const toggleListening = async () => {
-    if (captureRef.current) {
-      await stopCapture()
-      return
-    }
-    setMicError('')
-    setInput('')
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('This browser does not support microphone capture. Use a current version of Chrome or Edge.')
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-      })
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext
-      const context = new AudioContextClass()
-      const source = context.createMediaStreamSource(stream)
-      const processor = context.createScriptProcessor(4096, 1, 1)
-      const silence = context.createGain()
-      silence.gain.value = 0
-      const capture = {
-        context,
-        source,
-        processor,
-        silence,
-        stream,
-        chunks: [],
-        sampleRate: context.sampleRate,
-        heardSpeech: false,
-        silenceSince: null,
-        timeout: null,
-      }
-      processor.onaudioprocess = (event) => {
-        const samples = event.inputBuffer.getChannelData(0)
-        capture.chunks.push(new Float32Array(samples))
-        let peak = 0
-        for (let index = 0; index < samples.length; index += 1) peak = Math.max(peak, Math.abs(samples[index]))
-        if (peak > 0.012) {
-          capture.heardSpeech = true
-          capture.silenceSince = null
-        } else if (capture.heardSpeech) {
-          capture.silenceSince ??= Date.now()
-          if (Date.now() - capture.silenceSince > 1100) window.setTimeout(stopCapture, 0)
-        }
-      }
-      source.connect(processor)
-      processor.connect(silence)
-      silence.connect(context.destination)
-      capture.timeout = window.setTimeout(stopCapture, 12_000)
-      captureRef.current = capture
-      setIsListening(true)
-      setMicError("Listening... speak now. I'll stop after you pause.")
-    } catch (error) {
-      setIsListening(false)
-      setMicError(error.name === 'NotAllowedError'
-        ? 'Microphone access was blocked. Allow it in your browser address bar and try again.'
-        : error.message || 'The microphone could not be started.')
-    }
-  }
-
   if (authView) return <AuthScreen onSignedIn={completeSignIn} />
 
   const activeSession = chatSessions.find((session) => session.id === activeSessionId)
@@ -1826,7 +1658,7 @@ function App() {
             </div>
           </div>
           {/* <div className="core-card core-card-bottom">
-            <div className={`core-visual ${isThinking ? 'processing' : ''} ${isListening ? 'listening' : ''}`}>
+            <div className={`core-visual ${isThinking ? 'processing' : ''}`}>
               <span className="core-ring ring-one" />
               <span className="core-ring ring-two" />
               <span className="core-ring ring-three" />
@@ -1834,13 +1666,13 @@ function App() {
             </div>
             <div className="core-copy">
               <span>NEXA CORE</span>
-              <strong>{isListening ? 'Listening now' : isThinking ? 'Processing request' : 'Ready when you are'}</strong>
+              <strong>{isThinking ? 'Processing request' : 'Ready when you are'}</strong>
             </div>
           </div> */}
 
           <div className="sidebar-foot">
             <span className="shield-icon" aria-hidden="true" />
-            <p><strong>Private by default</strong><small>Audio is processed locally</small></p>
+            <p><strong>Private by default</strong><small>Chat data stays in your workspace</small></p>
           </div>
         </aside>
 
@@ -1992,7 +1824,6 @@ function App() {
           </div>
 
           <footer className="composer-dock">
-            {micError && <p className="mic-error" role="status">{micError}</p>}
             {apiError && <p className="api-error" role="alert">{apiError}</p>}
 
             {pendingEmail && (
@@ -2183,16 +2014,6 @@ function App() {
             )}
 
             <form className={`text-composer ${agentMode ? 'agent-mode' : ''}`} onSubmit={(event) => { event.preventDefault(); sendMessage() }}>
-              <button
-                className={`composer-mic ${isListening ? 'listening' : ''}`}
-                type="button"
-                onClick={toggleListening}
-                aria-label={isListening ? 'Stop recording and transcribe' : 'Start voice conversation'}
-                aria-pressed={isListening}
-              >
-                <span className="mic-icon" aria-hidden="true" />
-                {isListening && <span className="mic-ripple" aria-hidden="true" />}
-              </button>
               <input
                 ref={pdfInputRef}
                 className="pdf-input"
@@ -2236,7 +2057,7 @@ function App() {
                       clearAgentMention()
                     }
                   }}
-                  placeholder={isListening ? 'Listening...' : agentMode ? 'Ask Nexa to handle this...' : pdfFile ? 'Ask about the attached PDF' : sharedSessionActive ? 'Message members or start with @Agent' : 'Message Nexa'}
+                  placeholder={agentMode ? 'Ask Nexa to handle this...' : pdfFile ? 'Ask about the attached PDF' : sharedSessionActive ? 'Message members or start with @Agent' : 'Message Nexa'}
                   aria-label="Message Nexa"
                 />
                 {agentSuggestionVisible && (
@@ -2253,7 +2074,7 @@ function App() {
                     </span>
                   </button>
                 )}
-                <small>{isListening ? "Speak naturally - I'll stop when you pause" : agentMode ? 'Nexa agent will respond to this request' : pdfFile ? 'Prefix with Remember: to save this document permanently' : sharedSessionActive ? 'Messages go to session members. Use @Agent to call Nexa.' : 'Nexa will respond in this private session.'}</small>
+                <small>{agentMode ? 'Nexa agent will respond to this request' : pdfFile ? 'Prefix with Remember: to save this document permanently' : sharedSessionActive ? 'Messages go to session members. Use @Agent to call Nexa.' : 'Nexa will respond in this private session.'}</small>
               </label>
               <div className="composer-help-shell" ref={composerHelpRef}>
                 <button
@@ -2313,10 +2134,6 @@ function App() {
               </button>
             </form>
 
-            <p className="voice-note">
-              <span className={`status-dot ${voiceReplies ? '' : 'offline'}`} />
-              Spoken responses are {voiceReplies ? 'enabled for voice requests' : 'turned off'}
-            </p>
           </footer>
         </section>
         <aside className="activity-rail">
@@ -2425,7 +2242,6 @@ function App() {
             <div><span>Orchestrator</span><strong>LangGraph</strong></div>
             <div><span>Reasoning</span><strong>Qwen</strong></div>
             <div><span>Search</span><strong className="ready">Ready</strong></div>
-            <div><span>Speech</span><strong className="ready">Local</strong></div>
           </div> */}
 
           <div className="capability-stack">
@@ -2436,9 +2252,7 @@ function App() {
                   className={`capability-icon ${
                     capability.id === 'web'
                       ? 'search-icon'
-                      : capability.id === 'voice'
-                        ? 'voice-icon'
-                        : capability.id === 'email'
+                      : capability.id === 'email'
                           ? 'mail-icon'
                           : 'action-icon'
                   }`}
