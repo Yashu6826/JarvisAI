@@ -667,6 +667,7 @@ function App() {
   const membersPanelRef = useRef(null)
   const composerHelpRef = useRef(null)
   const captureRef = useRef(null)
+  const audioPlaybackRef = useRef({ audio: null, url: '' })
   const pdfInputRef = useRef(null)
   const locationPromptedRef = useRef('')
 
@@ -1027,14 +1028,53 @@ function App() {
     }
   }, [])
 
+  const stopSpokenReply = useCallback(() => {
+    const current = audioPlaybackRef.current
+    if (current.audio) {
+      current.audio.pause()
+      current.audio.src = ''
+    }
+    if (current.url) URL.revokeObjectURL(current.url)
+    audioPlaybackRef.current = { audio: null, url: '' }
+  }, [])
+
   const speak = useCallback((text) => {
-    if (!voiceReplies || !('speechSynthesis' in window)) return
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = 1
-    utterance.pitch = 0.9
-    window.speechSynthesis.speak(utterance)
-  }, [voiceReplies])
+    if (!voiceReplies || !text?.trim()) return
+    stopSpokenReply()
+    ;(async () => {
+      try {
+        const response = await apiFetch(`${API_BASE}/api/speech`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ text }),
+        })
+        if (!response.ok) {
+          let detail = 'Nexa could not generate the spoken reply.'
+          try {
+            const data = await response.json()
+            detail = data.detail || detail
+          } catch {
+            detail = await response.text() || detail
+          }
+          throw new Error(detail)
+        }
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        audioPlaybackRef.current = { audio, url }
+        audio.onended = () => {
+          if (audioPlaybackRef.current.audio === audio) stopSpokenReply()
+        }
+        await audio.play()
+      } catch (error) {
+        stopSpokenReply()
+        setMicError(error.message === 'Failed to fetch'
+          ? 'Nexa speech service is offline.'
+          : error.message || 'Nexa could not play the spoken reply.')
+      }
+    })()
+  }, [stopSpokenReply, voiceReplies])
 
   const clearPdfAttachment = useCallback(() => {
     setPdfFile(null)
@@ -1593,6 +1633,8 @@ function App() {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, isThinking, liveAnswer, thinkingStatus])
 
+  useEffect(() => stopSpokenReply, [stopSpokenReply])
+
   const stopCapture = useCallback(async () => {
     const capture = captureRef.current
     if (!capture) return
@@ -1621,7 +1663,7 @@ function App() {
         binary += String.fromCharCode(...bytes.subarray(index, index + 8192))
       }
 
-      setMicError("Transcribing your voice locally...")
+      setMicError('Transcribing your voice with Nexa...')
       const response = await apiFetch(`${API_BASE}/api/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
