@@ -58,16 +58,17 @@ The owner profile questions use embeddings over `Resume_Yashraj.pdf`.
 This creates `Backend/Data/OwnerRAG/index.json`, which stores resume chunks and their
 embedding vectors. Owner/creator questions automatically use this index.
 
-## 4. Add offline voice recognition
+## 4. Add voice support
 
-Download and unzip the Vosk small English model into
-models/vosk-model-small-en-us-0.15.
+Voice transcription and spoken replies both use OpenRouter, so there is no local
+speech model to download or run. Set `OPENROUTER_API_KEY` and keep these values
+in `.env`:
 
-For another language, download that language's Vosk model and update
-INPUT_LANGUAGE and VOSK_MODEL_PATH in .env. Vosk runs entirely on-device.
-
-If Windows cannot open the default microphone, set VOSK_INPUT_DEVICE to a
-working device index after checking the available devices on that computer.
+```env
+OPENROUTER_TTS_MODEL="fish-audio/s2.1-pro-free:free"
+OPENROUTER_STT_MODEL="openai/whisper-1"
+OPENROUTER_STT_LANGUAGE="en"
+```
 
 ## 5. Optional local image generation
 

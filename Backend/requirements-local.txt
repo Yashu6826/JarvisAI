@@ -2,6 +2,3 @@
 AppOpener
 keyboard
 PyQt5
-pyttsx3
-sounddevice
-vosk

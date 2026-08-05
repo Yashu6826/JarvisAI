@@ -9,7 +9,9 @@ import sys
 import threading
 import secrets
 import asyncio
-from base64 import b64decode
+import io
+import wave
+from base64 import b64decode, b64encode
 from pathlib import Path
 from urllib.parse import urlencode
 import requests
@@ -85,7 +87,6 @@ from Backend.MCPManager import (
     get_latest_pending_action,
     mcp_status_snapshot,
 )
-from Backend.SpeechToText import SpeechRecognition, TranscribePCM
 from Backend.MongoStore import (
     StoreUnavailable,
     active_participant_count,
@@ -252,6 +253,10 @@ class AudioRequest(BaseModel):
     sample_rate: int = Field(ge=8_000, le=96_000)
 
 
+class SpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=5_000)
+
+
 class EmailConfirmRequest(BaseModel):
     recipient: str = ""
     cc: str = ""
@@ -339,6 +344,120 @@ def _set_google_session_cookie(response: Response, session_id: str) -> None:
         secure=get_config("GOOGLE_OAUTH_COOKIE_SECURE", "true" if _cookie_secure_default() else "false").lower() == "true",
         max_age=60 * 60 * 24 * 180,
     )
+
+
+def _spoken_response_text(text: str) -> str:
+    clean_text = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(clean_text) <= 900:
+        return clean_text
+    sentences = re.split(r"(?<=[.!?])\s+", clean_text)
+    preview = " ".join(sentence for sentence in sentences[:2] if sentence).strip()
+    if len(preview) < 80:
+        preview = clean_text[:700].rsplit(" ", 1)[0].strip()
+    return f"{preview} The full response is visible on the chat screen."
+
+
+def _openrouter_speech(text: str) -> tuple[bytes, str]:
+    api_key = get_config("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured.")
+    base_url = get_config("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+    response_format = get_config("OPENROUTER_TTS_FORMAT", "mp3").strip().lower() or "mp3"
+    try:
+        speed = float(get_config("OPENROUTER_TTS_SPEED", "1"))
+    except ValueError:
+        speed = 1.0
+    payload = {
+        "model": get_config("OPENROUTER_TTS_MODEL", "fish-audio/s2.1-pro-free:free"),
+        "input": _spoken_response_text(text),
+        "voice": get_config("OPENROUTER_TTS_VOICE", "alloy"),
+        "response_format": response_format,
+        "speed": speed,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "audio/*",
+    }
+    referer = get_config("OPENROUTER_HTTP_REFERER", "")
+    title = get_config("OPENROUTER_APP_TITLE", "NEXA")
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if title:
+        headers["X-Title"] = title
+    response = requests.post(
+        f"{base_url}/audio/speech",
+        json=payload,
+        headers=headers,
+        timeout=int(get_config("OPENROUTER_TTS_TIMEOUT_SECONDS", get_config("OPENROUTER_TIMEOUT_SECONDS", "120"))),
+    )
+    if response.status_code >= 400:
+        try:
+            error_payload = response.json()
+            detail = error_payload.get("error", {}).get("message") or error_payload.get("detail")
+        except (TypeError, ValueError, AttributeError):
+            detail = response.text[:300]
+        raise RuntimeError(detail or f"OpenRouter speech failed with HTTP {response.status_code}.")
+    media_type = response.headers.get("Content-Type") or ("audio/mpeg" if response_format == "mp3" else "application/octet-stream")
+    return response.content, media_type
+
+
+def _pcm16_to_wav(audio: bytes, sample_rate: int) -> bytes:
+    wav_buffer = io.BytesIO()
+    with wave.open(wav_buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(audio)
+    return wav_buffer.getvalue()
+
+
+def _openrouter_transcription(audio: bytes, sample_rate: int) -> str:
+    api_key = get_config("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured.")
+    if not audio:
+        return ""
+    wav_audio = _pcm16_to_wav(audio, sample_rate)
+    base_url = get_config("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+    payload = {
+        "model": get_config("OPENROUTER_STT_MODEL", "openai/whisper-1"),
+        "input_audio": {
+            "data": b64encode(wav_audio).decode("ascii"),
+            "format": "wav",
+        },
+    }
+    language = get_config("OPENROUTER_STT_LANGUAGE", "en").strip()
+    if language:
+        payload["language"] = language
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    referer = get_config("OPENROUTER_HTTP_REFERER", "")
+    title = get_config("OPENROUTER_APP_TITLE", "NEXA")
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if title:
+        headers["X-Title"] = title
+    response = requests.post(
+        f"{base_url}/audio/transcriptions",
+        json=payload,
+        headers=headers,
+        timeout=int(get_config("OPENROUTER_STT_TIMEOUT_SECONDS", get_config("OPENROUTER_TIMEOUT_SECONDS", "120"))),
+    )
+    if response.status_code >= 400:
+        try:
+            error_payload = response.json()
+            detail = error_payload.get("error", {}).get("message") or error_payload.get("detail")
+        except (TypeError, ValueError, AttributeError):
+            detail = response.text[:300]
+        raise RuntimeError(detail or f"OpenRouter transcription failed with HTTP {response.status_code}.")
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RuntimeError("OpenRouter transcription returned an invalid response.") from exc
+    return str(data.get("text") or "").strip()
 
 
 def _chat_lock(request: Request) -> threading.Lock:
@@ -992,22 +1111,12 @@ async def chat_stream(request: ChatRequest, http_request: Request):
 
 @app.post("/api/listen", response_model=ListenResponse)
 async def listen() -> ListenResponse:
-    if not microphone_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="The microphone is already listening.")
-    try:
-        transcript = await run_in_threadpool(SpeechRecognition)
-    finally:
-        microphone_lock.release()
-    if not transcript:
-        raise HTTPException(
-            status_code=408,
-            detail="No speech was detected. Speak clearly near the microphone and try again.",
-        )
-    return ListenResponse(transcript=transcript)
+    raise HTTPException(status_code=410, detail="Server-side local microphone listening has been removed.")
 
 
 @app.post("/api/transcribe", response_model=ListenResponse)
-async def transcribe_audio(request: AudioRequest) -> ListenResponse:
+async def transcribe_audio(request: AudioRequest, http_request: Request) -> ListenResponse:
+    _authenticated_user(http_request)
     try:
         audio = b64decode(request.audio, validate=True)
     except ValueError as exc:
@@ -1015,9 +1124,9 @@ async def transcribe_audio(request: AudioRequest) -> ListenResponse:
     if not microphone_lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="A voice recording is already being processed.")
     try:
-        transcript = await run_in_threadpool(TranscribePCM, audio, request.sample_rate)
+        transcript = await run_in_threadpool(_openrouter_transcription, audio, request.sample_rate)
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         microphone_lock.release()
     if not transcript:
@@ -1026,6 +1135,20 @@ async def transcribe_audio(request: AudioRequest) -> ListenResponse:
             detail="No speech was detected. Check the browser microphone permission and try again.",
         )
     return ListenResponse(transcript=transcript)
+
+
+@app.post("/api/speech")
+async def create_speech(request: SpeechRequest, http_request: Request) -> Response:
+    _authenticated_user(http_request)
+    try:
+        audio, media_type = await run_in_threadpool(_openrouter_speech, request.text)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return Response(
+        content=audio,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/{requested_path:path}", include_in_schema=False)
