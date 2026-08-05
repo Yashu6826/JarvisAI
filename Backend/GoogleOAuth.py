@@ -104,6 +104,10 @@ def _redirect_uri() -> str:
     return get_config("GOOGLE_OAUTH_REDIRECT_URI", f"{default_base_url}/api/google/oauth/callback").strip()
 
 
+def google_oauth_redirect_uri() -> str:
+    return _redirect_uri()
+
+
 def _fernet_key() -> bytes:
     raw = get_config("GOOGLE_TOKEN_ENCRYPTION_KEY", "").strip()
     if not raw:
