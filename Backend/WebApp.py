@@ -167,6 +167,17 @@ def _app_base_url() -> str:
     return get_config("APP_BASE_URL", "http://localhost:8000").rstrip("/")
 
 
+def _frontend_base_url() -> str:
+    return get_config("FRONTEND_BASE_URL", "").rstrip("/")
+
+
+def _frontend_redirect(query: dict[str, str] | None = None) -> str:
+    base_url = _frontend_base_url()
+    if not base_url:
+        raise HTTPException(status_code=503, detail="Frontend redirect URL is not configured. Set FRONTEND_BASE_URL.")
+    return f"{base_url}/?{urlencode(query)}" if query else f"{base_url}/"
+
+
 def _cookie_secure_default() -> bool:
     return bool(os.getenv("VERCEL"))
 
@@ -450,7 +461,7 @@ def google_login_api() -> RedirectResponse:
 @app.get("/api/auth/google/callback")
 def google_login_callback(code: str = "", state: str = "", error: str = "") -> RedirectResponse:
     if error or not code:
-        return RedirectResponse("/?auth_error=Google+sign-in+was+cancelled.", status_code=302)
+        return RedirectResponse(_frontend_redirect({"auth_error": "Google sign-in was cancelled."}), status_code=302)
     try:
         if not consume_google_login_state(state):
             raise ValueError("This Google sign-in request is invalid or expired.")
@@ -472,8 +483,8 @@ def google_login_callback(code: str = "", state: str = "", error: str = "") -> R
         )
         token = create_auth_session(user)
     except (StoreUnavailable, ValueError, requests.RequestException) as exc:
-        return RedirectResponse(f"/?{urlencode({'auth_error': str(exc)})}", status_code=302)
-    response = RedirectResponse("/", status_code=302)
+        return RedirectResponse(_frontend_redirect({"auth_error": str(exc)}), status_code=302)
+    response = RedirectResponse(_frontend_redirect(), status_code=302)
     _set_auth_cookie(response, token)
     return response
 
@@ -679,6 +690,7 @@ def oauth_debug_api() -> dict:
     app_base_url = _app_base_url()
     return {
         "app_base_url": app_base_url,
+        "frontend_base_url": _frontend_base_url(),
         "cors_allowed_origins": _csv_config("CORS_ALLOWED_ORIGINS"),
         "google_signin_client_configured": bool(get_config("GOOGLE_SIGNIN_CLIENT_ID", "").strip()),
         "google_signin_redirect_uri": get_config(
@@ -707,13 +719,12 @@ def google_connect_api(service: str, request: Request) -> RedirectResponse:
 @app.get("/api/google/oauth/callback", name="google_oauth_callback")
 def google_oauth_callback(code: str = "", state: str = "", error: str = "") -> RedirectResponse:
     if error:
-        return RedirectResponse(f"/?{urlencode({'google': 'error', 'detail': error})}", status_code=302)
+        return RedirectResponse(_frontend_redirect({"google": "error", "detail": error}), status_code=302)
     try:
         service, _email = complete_authorization(code, state)
     except GoogleOAuthError as exc:
-        query = urlencode({"google": "error", "detail": str(exc)})
-        return RedirectResponse(f"/?{query}", status_code=302)
-    return RedirectResponse(f"/?{urlencode({'google': 'connected', 'service': service})}", status_code=302)
+        return RedirectResponse(_frontend_redirect({"google": "error", "detail": str(exc)}), status_code=302)
+    return RedirectResponse(_frontend_redirect({"google": "connected", "service": service}), status_code=302)
 
 
 @app.post("/api/google/disconnect/{service}")
