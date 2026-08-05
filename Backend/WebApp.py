@@ -198,7 +198,7 @@ app.add_middleware(
     allow_origin_regex=get_config("CORS_ALLOWED_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1):\d+"),
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -283,9 +283,20 @@ def _google_session_id(request: Request) -> str:
     )
 
 
+def _request_auth_token(request: Request) -> str:
+    query_token = str(request.query_params.get("auth_token") or "")
+    if query_token.strip():
+        return query_token.strip()
+    authorization = str(request.headers.get("Authorization") or "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and token.strip():
+        return token.strip()
+    return str(request.cookies.get(AUTH_COOKIE) or "")
+
+
 def _authenticated_user(request: Request) -> dict:
     try:
-        user = auth_user(str(request.cookies.get(AUTH_COOKIE) or ""))
+        user = auth_user(_request_auth_token(request))
     except StoreUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not user:
@@ -413,7 +424,7 @@ def register_api(payload: CredentialsRequest) -> JSONResponse:
         token = create_auth_session(user)
     except (StoreUnavailable, ValueError) as exc:
         raise HTTPException(status_code=400 if isinstance(exc, ValueError) else 503, detail=str(exc)) from exc
-    response = JSONResponse({"user": user})
+    response = JSONResponse({"user": user, "token": token})
     _set_auth_cookie(response, token)
     return response
 
@@ -427,7 +438,7 @@ def login_api(payload: CredentialsRequest) -> JSONResponse:
         token = create_auth_session(user)
     except StoreUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    response = JSONResponse({"user": user})
+    response = JSONResponse({"user": user, "token": token})
     _set_auth_cookie(response, token)
     return response
 
@@ -435,7 +446,7 @@ def login_api(payload: CredentialsRequest) -> JSONResponse:
 @app.post("/api/auth/logout")
 def logout_api(request: Request) -> JSONResponse:
     try:
-        revoke_auth_session(str(request.cookies.get(AUTH_COOKIE) or ""))
+        revoke_auth_session(_request_auth_token(request))
     except StoreUnavailable:
         pass
     response = JSONResponse({"ok": True})
@@ -484,7 +495,7 @@ def google_login_callback(code: str = "", state: str = "", error: str = "") -> R
         token = create_auth_session(user)
     except (StoreUnavailable, ValueError, requests.RequestException) as exc:
         return RedirectResponse(_frontend_redirect({"auth_error": str(exc)}), status_code=302)
-    response = RedirectResponse(_frontend_redirect(), status_code=302)
+    response = RedirectResponse(_frontend_redirect({"auth": "google", "token": token}), status_code=302)
     _set_auth_cookie(response, token)
     return response
 
@@ -605,7 +616,8 @@ async def remove_chat_participant_api(session_id: str, user_id: str, request: Re
 @app.websocket("/api/chats/{session_id}/live")
 async def chat_live_socket(session_id: str, websocket: WebSocket) -> None:
     try:
-        user = auth_user(str(websocket.cookies.get(AUTH_COOKIE) or ""))
+        token = str(websocket.query_params.get("auth_token") or websocket.cookies.get(AUTH_COOKIE) or "")
+        user = auth_user(token)
         if not user:
             await websocket.close(code=4401)
             return
