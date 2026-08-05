@@ -4240,3 +4240,155 @@ button {
   letter-spacing: .18em;
 }
 
+/* Final mobile compression: keep session chrome from eating the viewport. */
+@media (max-width: 760px) {
+  .chat-stage {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+
+  .session-collaboration-bar {
+    grid-row: 1 !important;
+    align-self: start !important;
+  }
+
+  .conversation {
+    grid-row: 2 !important;
+    align-self: stretch !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+
+  .composer-dock {
+    grid-row: 3 !important;
+  }
+
+  .mobile-drawer-actions {
+    min-height: 38px !important;
+    padding: 5px 10px 6px !important;
+  }
+
+  .mobile-drawer-actions button {
+    min-height: 28px !important;
+    max-width: 176px !important;
+    border-radius: 9px !important;
+    font-size: 10px !important;
+  }
+
+  .mobile-drawer-actions button svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .command-layout {
+    height: calc(100vh - 96px) !important;
+  }
+
+  .command-sidebar,
+  .activity-rail {
+    top: 96px !important;
+  }
+
+  .mobile-panel-scrim {
+    inset: 96px 0 0 !important;
+  }
+
+  .session-collaboration-bar {
+    min-height: 38px !important;
+    padding: 5px 10px !important;
+    gap: 8px !important;
+  }
+
+  .session-collaboration-bar > div:first-child {
+    gap: 1px !important;
+  }
+
+  .session-collaboration-bar > div:first-child strong {
+    max-width: 128px;
+    font-size: 10px !important;
+    line-height: 1.1;
+  }
+
+  .session-collaboration-bar .section-label {
+    font-size: 7px !important;
+    letter-spacing: .12em;
+  }
+
+  .session-day-label {
+    max-width: 70px !important;
+    font-size: 8px !important;
+    letter-spacing: .02em !important;
+  }
+
+  .session-collaboration-actions {
+    gap: 4px !important;
+  }
+
+  .session-collaboration-actions button,
+  .member-actions button {
+    width: 28px !important;
+    height: 28px !important;
+    border-radius: 8px !important;
+  }
+
+  .session-members-button {
+    min-width: 28px !important;
+    padding: 0 5px !important;
+  }
+
+  .conversation {
+    padding-top: 8px !important;
+    padding-bottom: 104px !important;
+  }
+
+  .empty-chat-hero,
+  .app-shell.theme-light .empty-chat-hero {
+    margin-top: 2.5vh !important;
+  }
+
+  .hero-orbit,
+  .app-shell.theme-light .hero-orbit {
+    width: 56px !important;
+    height: 56px !important;
+    margin-bottom: 14px !important;
+    border-radius: 16px !important;
+  }
+
+  .hero-orbit svg,
+  .app-shell.theme-light .hero-orbit svg {
+    width: 24px !important;
+    height: 24px !important;
+  }
+
+  .hero-orbit span,
+  .app-shell.theme-light .hero-orbit span {
+    inset: -7px !important;
+    border-radius: 20px !important;
+  }
+
+  .empty-chat-hero h2 {
+    margin: 7px 0 6px !important;
+    font-size: 20px !important;
+    line-height: 1.08 !important;
+  }
+
+  .empty-chat-hero > p:not(.section-label) {
+    max-width: 260px !important;
+    font-size: 11px !important;
+    line-height: 1.45 !important;
+  }
+
+  .hero-pills {
+    margin-top: 14px !important;
+    gap: 6px !important;
+  }
+
+  .hero-pills button {
+    min-height: 28px !important;
+    padding: 6px 9px !important;
+    font-size: 10px !important;
+  }
+}
+
