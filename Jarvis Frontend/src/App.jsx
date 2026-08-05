@@ -165,6 +165,19 @@ function areMessagesEquivalent(current, next) {
   })
 }
 
+function areSessionsEquivalent(current, next) {
+  if (current.length !== next.length) return false
+  return current.every((session, index) => {
+    const candidate = next[index]
+    return session.id === candidate.id
+      && session.title === candidate.title
+      && session.updated_at === candidate.updated_at
+      && session.shared === candidate.shared
+      && session.member_count === candidate.member_count
+      && Number(session.unread_count || 0) === Number(candidate.unread_count || 0)
+  })
+}
+
 function replyPreviewFromMessage(message) {
   if (!message || message.role === 'system') return null
   const text = String(message.text || '').replace(/\s+/g, ' ').trim()
@@ -656,6 +669,7 @@ function App() {
   const [activeSessionId, setActiveSessionId] = useState('')
   const [deletingSessionId, setDeletingSessionId] = useState('')
   const [participants, setParticipants] = useState([])
+  const [typingUsers, setTypingUsers] = useState([])
   const [sessionRole, setSessionRole] = useState('member')
   const [membersOpen, setMembersOpen] = useState(false)
   const [memberBusy, setMemberBusy] = useState('')
@@ -678,6 +692,8 @@ function App() {
   const scrollFrameRef = useRef(0)
   const composerInputRef = useRef(null)
   const sessionSocketRef = useRef(null)
+  const typingStopTimerRef = useRef(0)
+  const typingActiveRef = useRef(false)
   const membersPanelRef = useRef(null)
   const composerHelpRef = useRef(null)
   const pdfInputRef = useRef(null)
@@ -694,7 +710,7 @@ function App() {
     const response = await apiFetch(`${API_BASE}/api/chats`, { credentials: 'include' })
     if (!response.ok) throw new Error('Could not load chat sessions.')
     const sessions = (await response.json()).sessions || []
-    setChatSessions(sessions)
+    setChatSessions((current) => areSessionsEquivalent(current, sessions) ? current : sessions)
     return sessions
   }, [])
 
@@ -708,7 +724,18 @@ function App() {
     return data.session
   }, [])
 
-  const openChatSession = useCallback(async (sessionId) => {
+  const markSessionRead = useCallback(async (sessionId) => {
+    const response = await apiFetch(`${API_BASE}/api/chats/${sessionId}/read`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (!response.ok) return
+    setChatSessions((current) => current.map((session) => (
+      session.id === sessionId ? { ...session, unread_count: 0 } : session
+    )))
+  }, [])
+
+  const openChatSession = useCallback(async (sessionId, options = {}) => {
     const response = await apiFetch(`${API_BASE}/api/chats/${sessionId}/messages`, { credentials: 'include' })
     const data = await response.json()
     if (!response.ok) {
@@ -722,7 +749,8 @@ function App() {
       ? data.messages.map((message, index) => messageWithDocumentReference(message, `${sessionId}-${index}`))
       : starterMessages
     setMessages((current) => areMessagesEquivalent(current, nextMessages) ? current : nextMessages)
-  }, [])
+    if (options.markRead !== false) markSessionRead(sessionId).catch(() => {})
+  }, [markSessionRead])
 
   const loadParticipants = useCallback(async (sessionId = activeSessionId) => {
     if (!sessionId) return
@@ -821,6 +849,7 @@ function App() {
   }, [activeSessionId, chatSessions, createChatSession, deletingSessionId, openChatSession])
 
   const activeSessionIsEmpty = Boolean(activeSessionId) && messages.length === 1 && messages[0]?.id === 1
+  const activeSessionIsShared = Boolean(chatSessions.find((session) => session.id === activeSessionId)?.shared)
   const messageAuthorLabel = useCallback((message) => (
     message?.role === 'assistant'
       ? 'Nexa'
@@ -828,6 +857,11 @@ function App() {
   ), [user?.id])
   const fallbackMessageDay = messages.find((message) => message.role !== 'system' && message.createdAt)?.createdAt
   const sessionDayLabel = visibleMessageDay || (fallbackMessageDay ? formatMessageDay(fallbackMessageDay) : '')
+  const typingLabel = typingUsers.length === 1
+    ? `${typingUsers[0].name} is typing...`
+    : typingUsers.length > 1
+      ? `${typingUsers.slice(0, 2).map((person) => person.name).join(' and ')} are typing...`
+      : ''
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -901,6 +935,32 @@ function App() {
     })
     setComposerHelpOpen(false)
   }, [])
+
+  const handleTypingPresence = useCallback((isTyping) => {
+    if (!activeSessionIsShared) {
+      typingActiveRef.current = false
+      return
+    }
+    const socket = sessionSocketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    if (typingActiveRef.current === isTyping) return
+    typingActiveRef.current = isTyping
+    try {
+      socket.send(JSON.stringify({ type: 'typing', is_typing: isTyping }))
+    } catch {
+      typingActiveRef.current = false
+    }
+  }, [activeSessionIsShared])
+
+  const announceTyping = useCallback((isTyping) => {
+    window.clearTimeout(typingStopTimerRef.current)
+    handleTypingPresence(isTyping)
+    if (isTyping) {
+      typingStopTimerRef.current = window.setTimeout(() => {
+        handleTypingPresence(false)
+      }, 1200)
+    }
+  }, [handleTypingPresence])
 
   const requestSignedInLocation = useCallback(async (signedInUser, { force = false } = {}) => {
     if (!signedInUser) return null
@@ -1215,8 +1275,19 @@ function App() {
     setInput('')
     setReplyTarget(null)
     setApiError('')
+    announceTyping(false)
     if (!usesAgent) {
       try {
+        const socket = sessionSocketRef.current
+        if (socket?.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'message',
+            content: cleanMessage,
+            ...(selectedReply ? { reply_to_id: selectedReply.id } : {}),
+          }))
+          setIsOnline(true)
+          return
+        }
         const response = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1457,6 +1528,7 @@ function App() {
     browserLocation,
     requestSignedInLocation,
     replyTarget,
+    announceTyping,
   ])
 
   useEffect(() => {
@@ -1472,7 +1544,7 @@ function App() {
 
   useEffect(() => {
     if (!user || !activeSessionId) return undefined
-    if (window.matchMedia('(max-width: 760px)').matches) return undefined
+    if (!activeSessionIsShared) return undefined
     let disposed = false
     let reconnectTimer = 0
     let reconnectDelay = 1000
@@ -1511,7 +1583,15 @@ function App() {
             const index = current.length - optimisticIndex - 1
             return current.map((message, itemIndex) => itemIndex === index ? incoming : message)
           })
+          if (document.visibilityState === 'visible') markSessionRead(activeSessionId).catch(() => {})
           loadChatSessions().catch(() => {})
+        } else if (event.type === 'typing' && event.user_id) {
+          setTypingUsers((current) => {
+            const existing = current.filter((person) => person.id !== event.user_id)
+            return event.is_typing
+              ? [...existing, { id: event.user_id, name: event.name || 'Someone' }]
+              : existing
+          })
         } else if (event.type === 'refresh') {
           try {
             await openChatSession(activeSessionId)
@@ -1536,10 +1616,13 @@ function App() {
     return () => {
       disposed = true
       window.clearTimeout(reconnectTimer)
+      window.clearTimeout(typingStopTimerRef.current)
+      typingActiveRef.current = false
+      setTypingUsers([])
       sessionSocketRef.current?.close()
       sessionSocketRef.current = null
     }
-  }, [activeSessionId, createChatSession, loadChatSessions, loadParticipants, openChatSession, user])
+  }, [activeSessionId, activeSessionIsShared, createChatSession, loadChatSessions, loadParticipants, markSessionRead, openChatSession, user])
 
   useEffect(() => {
     if (!user || !activeSessionId) return undefined
@@ -1550,7 +1633,7 @@ function App() {
       if (refreshing) return
       refreshing = true
       try {
-        await openChatSession(activeSessionId)
+        await openChatSession(activeSessionId, { markRead: false })
       } catch (error) {
         if (error.status === 404) setApiError('This chat session is no longer available.')
       } finally {
@@ -1560,6 +1643,25 @@ function App() {
     const timer = window.setInterval(refreshMessages, 4000)
     return () => window.clearInterval(timer)
   }, [activeSessionId, chatSessions, openChatSession, user])
+
+  useEffect(() => {
+    if (!user) return undefined
+    const refreshSessions = () => loadChatSessions().catch(() => {})
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSessions()
+        if (activeSessionId) markSessionRead(activeSessionId).catch(() => {})
+      }
+    }
+    const timer = window.setInterval(refreshSessions, 10000)
+    window.addEventListener('focus', refreshSessions)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshSessions)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [activeSessionId, loadChatSessions, markSessionRead, user])
 
   useEffect(() => {
     if (!membersOpen && !composerHelpOpen) return undefined
@@ -1671,7 +1773,7 @@ function App() {
   if (authView) return <AuthScreen onSignedIn={completeSignIn} />
 
   const activeSession = chatSessions.find((session) => session.id === activeSessionId)
-  const sharedSessionActive = Boolean(activeSession?.shared)
+  const sharedSessionActive = activeSessionIsShared
   const agentMode = sharedSessionActive && hasAgentMention(input)
   const composerValue = agentMode ? stripAgentMention(input) : input
   const agentSuggestionVisible = sharedSessionActive && !agentMode && AGENT_PARTIAL_PATTERN.test(input.trimStart())
@@ -1731,10 +1833,13 @@ function App() {
             <div className="chat-list-heading"><p className="section-label">RECENT CONVERSATIONS</p><button type="button" aria-label="Search chats"><Search size={15} /></button></div>
             <div className="chat-session-list">
               {chatSessions.map((session) => (
-                <div className={`chat-session-row ${session.id === activeSessionId ? 'active' : ''}`} key={session.id}>
+                <div className={`chat-session-row ${session.id === activeSessionId ? 'active' : ''} ${session.unread_count ? 'has-unread' : ''}`} key={session.id}>
                   <button type="button" className={`chat-session-button ${session.id === activeSessionId ? 'active' : ''}`} onClick={() => { openChatSession(session.id).catch((error) => setApiError(error.message)); setLeftPanelOpen(false) }}>
-                    <span>{session.title}</span>
-                    {session.shared && <small className="session-member-count"><Users size={12} />{session.member_count || 2}</small>}
+                    <span className="chat-session-title">{session.title}</span>
+                    <span className="chat-session-meta">
+                      {session.shared && <small className="session-member-count"><Users size={12} />{session.member_count || 2}</small>}
+                      {session.unread_count > 0 && <small className="session-unread-badge" aria-label={`${session.unread_count} unread message${session.unread_count === 1 ? '' : 's'}`}>{session.unread_count > 9 ? '9+' : session.unread_count}</small>}
+                    </span>
                   </button>
                   <button
                     type="button"
@@ -1779,6 +1884,7 @@ function App() {
                 <strong>{activeSession?.title || 'New chat'}</strong>
               </div>
               {sessionDayLabel && <span className="session-day-label">{sessionDayLabel}</span>}
+              {typingLabel && <span className="session-typing-indicator" role="status"><i />{typingLabel}</span>}
               <div className="session-collaboration-actions">
                 <button type="button" className="session-members-button" onClick={() => { setMembersOpen((open) => !open); loadParticipants().catch((error) => setApiError(error.message)) }} title="Manage members" aria-label="Manage members">
                   {participants.length > 1 ? <span className="participant-avatars">{participants.slice(0, 3).map((participant) => participant.picture ? <img key={participant.user_id} src={participant.picture} alt="" referrerPolicy="no-referrer" /> : <i key={participant.user_id}>{participant.name?.trim()?.charAt(0)?.toUpperCase() || 'M'}</i>)}</span> : <Users size={17} />}
@@ -2141,7 +2247,10 @@ function App() {
                 <input
                   ref={composerInputRef}
                   value={composerValue}
-                  onChange={(event) => setInput(agentMode ? `@Agent ${event.target.value}` : event.target.value)}
+                  onChange={(event) => {
+                    setInput(agentMode ? `@Agent ${event.target.value}` : event.target.value)
+                    announceTyping(Boolean(event.target.value.trim()))
+                  }}
                   onKeyDown={(event) => {
                     if (agentSuggestionVisible && (event.key === 'Enter' || event.key === 'Tab' || event.key === 'ArrowDown')) {
                       event.preventDefault()

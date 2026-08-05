@@ -49,6 +49,7 @@ def _db():
         _database.auth_sessions.create_index("expires_at", expireAfterSeconds=0)
         _database.chat_sessions.create_index([("user_id", ASCENDING), ("updated_at", DESCENDING)])
         _database.chat_messages.create_index([("session_id", ASCENDING), ("created_at", ASCENDING)])
+        _database.chat_messages.create_index([("session_id", ASCENDING), ("role", ASCENDING), ("sender_user_id", ASCENDING), ("created_at", ASCENDING)])
         _database.chat_participants.create_index([("session_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
         _database.chat_participants.create_index([("user_id", ASCENDING), ("status", ASCENDING)])
         _database.chat_invites.create_index("token_hash", unique=True)
@@ -187,13 +188,25 @@ def create_chat_session(user_id: str, title: str = "New chat") -> dict[str, Any]
     item = {"id": str(uuid.uuid4()), "user_id": user_id, "title": title, "created_at": now, "updated_at": now}
     db = _db()
     db.chat_sessions.insert_one(item)
-    db.chat_participants.insert_one({"session_id": item["id"], "user_id": user_id, "role": "admin", "status": "active", "joined_at": now})
+    db.chat_participants.insert_one({"session_id": item["id"], "user_id": user_id, "role": "admin", "status": "active", "joined_at": now, "last_read_at": now})
     return chat_session_public(item, user_id)
 
 
 def chat_session_public(item: dict[str, Any], user_id: str = "") -> dict[str, Any]:
-    participant = _db().chat_participants.find_one({"session_id": item["id"], "user_id": user_id, "status": "active"}) if user_id else None
-    member_count = _db().chat_participants.count_documents({"session_id": item["id"], "status": "active"}) if participant else 1
+    db = _db()
+    participant = db.chat_participants.find_one({"session_id": item["id"], "user_id": user_id, "status": "active"}) if user_id else None
+    member_count = db.chat_participants.count_documents({"session_id": item["id"], "status": "active"}) if participant else 1
+    unread_count = 0
+    if participant and user_id:
+        unread_query: dict[str, Any] = {
+            "session_id": item["id"],
+            "role": "user",
+            "sender_user_id": {"$ne": user_id},
+        }
+        last_read_at = participant.get("last_read_at") or participant.get("joined_at")
+        if last_read_at:
+            unread_query["created_at"] = {"$gt": last_read_at}
+        unread_count = db.chat_messages.count_documents(unread_query)
     return {
         "id": str(item["id"]),
         "title": str(item.get("title") or "New chat"),
@@ -202,6 +215,7 @@ def chat_session_public(item: dict[str, Any], user_id: str = "") -> dict[str, An
         "role": str((participant or {}).get("role") or "admin"),
         "shared": member_count > 1,
         "member_count": member_count,
+        "unread_count": unread_count,
         "private_copy": bool(item.get("private_copy")),
     }
 
@@ -212,7 +226,7 @@ def list_chat_sessions(user_id: str) -> list[dict[str, Any]]:
     for item in db.chat_sessions.find({"user_id": user_id}):
         db.chat_participants.update_one(
             {"session_id": item["id"], "user_id": user_id},
-            {"$setOnInsert": {"role": "admin", "status": "active", "joined_at": item.get("created_at") or _now()}},
+            {"$setOnInsert": {"role": "admin", "status": "active", "joined_at": item.get("created_at") or _now(), "last_read_at": item.get("created_at") or _now()}},
             upsert=True,
         )
     ids = [item["session_id"] for item in db.chat_participants.find({"user_id": user_id, "status": "active"}, {"session_id": 1})]
@@ -236,6 +250,14 @@ def list_chat_participants(session_id: str) -> list[dict[str, Any]]:
 
 def active_participant_count(session_id: str) -> int:
     return _db().chat_participants.count_documents({"session_id": session_id, "status": "active"})
+
+
+def mark_chat_session_read(session_id: str, user_id: str) -> bool:
+    result = _db().chat_participants.update_one(
+        {"session_id": session_id, "user_id": user_id, "status": "active"},
+        {"$set": {"last_read_at": _now()}},
+    )
+    return bool(result.matched_count)
 
 
 def create_chat_invite(session_id: str, created_by: str) -> str:
@@ -263,7 +285,7 @@ def accept_chat_invite(user_id: str, token: str) -> dict[str, Any]:
     joined_at = _now()
     db.chat_participants.update_one(
         {"session_id": session["id"], "user_id": user_id},
-        {"$set": {"role": "member", "status": "active", "joined_at": joined_at}, "$unset": {"removed_at": ""}},
+        {"$set": {"role": "member", "status": "active", "joined_at": joined_at, "last_read_at": joined_at}, "$unset": {"removed_at": ""}},
         upsert=True,
     )
     joined_user = db.users.find_one({"id": user_id}, {"email": 1}) or {}
