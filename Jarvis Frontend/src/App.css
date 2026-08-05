@@ -4205,5 +4205,22 @@ button {
     padding: 6px 9px !important;
     font-size: 10px !important;
   }
+
+  /* Keep the chat usable on mobile GPUs while text and messages update. */
+  .ambient-particles,
+  .sidebar-particles {
+    display: none !important;
+  }
+
+  .topbar,
+  .command-sidebar,
+  .activity-rail,
+  .chat-header,
+  .composer-dock,
+  .text-composer,
+  .message.user .message-content > p,
+  .answer-card {
+    backdrop-filter: none !important;
+  }
 }
 

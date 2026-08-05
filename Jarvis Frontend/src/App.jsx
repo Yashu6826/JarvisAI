@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { CircleHelp, Command, Copy, Crown, FileText, History, Link2, Moon, Plus, Reply, Search, SendHorizontal, Share2, Sparkles, Sun, Trash2, UserMinus, Users, X } from 'lucide-react'
@@ -150,6 +150,21 @@ function messageWithDocumentReference(message, id) {
   }
 }
 
+function areMessagesEquivalent(current, next) {
+  if (current.length !== next.length) return false
+  return current.every((message, index) => {
+    const candidate = next[index]
+    return String(message.id) === String(candidate.id)
+      && message.role === candidate.role
+      && message.text === candidate.text
+      && message.time === candidate.time
+      && message.createdAt === candidate.createdAt
+      && message.senderName === candidate.senderName
+      && message.sender_user_id === candidate.sender_user_id
+      && JSON.stringify(message.replyTo || null) === JSON.stringify(candidate.replyTo || null)
+  })
+}
+
 function replyPreviewFromMessage(message) {
   if (!message || message.role === 'system') return null
   const text = String(message.text || '').replace(/\s+/g, ' ').trim()
@@ -247,7 +262,7 @@ const markdownComponents = {
   table: MarkdownTable,
 }
 
-function MarkdownMessage({ children, streaming = false }) {
+const MarkdownMessage = memo(function MarkdownMessage({ children, streaming = false }) {
   return (
     <div className={`markdown-body ${streaming ? 'live-answer' : ''}`}>
       <ReactMarkdown
@@ -260,7 +275,7 @@ function MarkdownMessage({ children, streaming = false }) {
       {streaming && <span className="stream-cursor" aria-hidden="true" />}
     </div>
   )
-}
+})
 
 function parseMarkdownTables(text = '') {
   const lines = text.split('\n')
@@ -358,7 +373,7 @@ function parseResearchSections(text = '') {
   return reportLike ? sections.slice(0, 6) : []
 }
 
-function AnswerCards({ message }) {
+const AnswerCards = memo(function AnswerCards({ message }) {
   const text = message.text || ''
   const tables = parseMarkdownTables(text)
   const chart = tables.map(chartFromTable).find(Boolean)
@@ -488,7 +503,7 @@ function AnswerCards({ message }) {
       )}
     </div>
   )
-}
+})
 
 function Logo() {
   return <img className="logo-mark" src="/NEXA.png" alt="" aria-hidden="true" />
@@ -659,6 +674,8 @@ function App() {
   const [leftPanelOpen, setLeftPanelOpen] = useState(false)
   const [theme, setTheme] = useState(readThemePreference)
   const feedRef = useRef(null)
+  const shouldStickToBottomRef = useRef(true)
+  const scrollFrameRef = useRef(0)
   const composerInputRef = useRef(null)
   const sessionSocketRef = useRef(null)
   const membersPanelRef = useRef(null)
@@ -701,9 +718,10 @@ function App() {
     }
     setActiveSessionId(sessionId)
     setReplyTarget(null)
-    setMessages(data.messages.length
+    const nextMessages = data.messages.length
       ? data.messages.map((message, index) => messageWithDocumentReference(message, `${sessionId}-${index}`))
-      : starterMessages)
+      : starterMessages
+    setMessages((current) => areMessagesEquivalent(current, nextMessages) ? current : nextMessages)
   }, [])
 
   const loadParticipants = useCallback(async (sessionId = activeSessionId) => {
@@ -824,26 +842,36 @@ function App() {
     const feed = feedRef.current
     if (!feed) return undefined
 
+    let updateFrame = 0
     const updateVisibleDay = () => {
+      updateFrame = 0
       const messageNodes = Array.from(feed.querySelectorAll('[data-message-day]'))
       if (!messageNodes.length) {
-        setVisibleMessageDay('')
+        setVisibleMessageDay((current) => current ? '' : current)
         return
       }
       const feedTop = feed.getBoundingClientRect().top
       const markerLine = feedTop + 18
       const visibleNode = messageNodes.find((node) => node.getBoundingClientRect().bottom >= markerLine) || messageNodes[messageNodes.length - 1]
-      setVisibleMessageDay(visibleNode?.dataset.messageDay || '')
+      const nextDay = visibleNode?.dataset.messageDay || ''
+      setVisibleMessageDay((current) => current === nextDay ? current : nextDay)
+    }
+
+    const scheduleVisibleDayUpdate = () => {
+      const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight
+      shouldStickToBottomRef.current = distanceFromBottom < 96
+      if (!updateFrame) updateFrame = window.requestAnimationFrame(updateVisibleDay)
     }
 
     updateVisibleDay()
-    feed.addEventListener('scroll', updateVisibleDay, { passive: true })
-    window.addEventListener('resize', updateVisibleDay)
+    feed.addEventListener('scroll', scheduleVisibleDayUpdate, { passive: true })
+    window.addEventListener('resize', scheduleVisibleDayUpdate)
     return () => {
-      feed.removeEventListener('scroll', updateVisibleDay)
-      window.removeEventListener('resize', updateVisibleDay)
+      feed.removeEventListener('scroll', scheduleVisibleDayUpdate)
+      window.removeEventListener('resize', scheduleVisibleDayUpdate)
+      if (updateFrame) window.cancelAnimationFrame(updateFrame)
     }
-  }, [activeSessionId, messages])
+  }, [activeSessionId, messages.length])
 
   const startReply = useCallback((message) => {
     const preview = replyPreviewFromMessage(message)
@@ -1331,6 +1359,7 @@ function App() {
       let confirmationAction = null
       let skipChatMessage = false
       let streamFinished = false
+      let lastLiveAnswerUpdateAt = 0
 
       while (!streamFinished) {
         const { value: chunk, done } = await reader.read()
@@ -1364,7 +1393,11 @@ function App() {
             setPendingMcpAction(event.action || null)
           } else if (event.type === 'delta') {
             completedAnswer += event.content
-            setLiveAnswer(completedAnswer)
+            const now = Date.now()
+            if (now - lastLiveAnswerUpdateAt >= 50) {
+              lastLiveAnswerUpdateAt = now
+              setLiveAnswer(completedAnswer)
+            }
           } else if (event.type === 'error') {
             throw new Error(event.message)
           } else if (event.type === 'done') {
@@ -1385,6 +1418,7 @@ function App() {
         await loadPendingMcpAction()
       }
       if (!skipChatMessage && completedAnswer.trim()) {
+        setLiveAnswer(completedAnswer)
         const answerCreatedAt = new Date().toISOString()
         setMessages((current) => [...current, {
           id: Date.now() + 1,
@@ -1438,8 +1472,10 @@ function App() {
 
   useEffect(() => {
     if (!user || !activeSessionId) return undefined
+    if (window.matchMedia('(max-width: 760px)').matches) return undefined
     let disposed = false
     let reconnectTimer = 0
+    let reconnectDelay = 1000
 
     const recoverSession = async () => {
       const sessions = await loadChatSessions()
@@ -1456,6 +1492,10 @@ function App() {
       if (authToken) apiUrl.searchParams.set('auth_token', authToken)
       const socket = new WebSocket(apiUrl.toString())
       sessionSocketRef.current = socket
+
+      socket.onopen = () => {
+        reconnectDelay = 1000
+      }
 
       socket.onmessage = async (packet) => {
         let event
@@ -1485,7 +1525,10 @@ function App() {
         }
       }
       socket.onclose = () => {
-        if (!disposed) reconnectTimer = window.setTimeout(connect, 1000)
+        if (!disposed) {
+          reconnectTimer = window.setTimeout(connect, reconnectDelay)
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000)
+        }
       }
     }
 
@@ -1610,8 +1653,20 @@ function App() {
   }, [user, requestSignedInLocation])
 
   useEffect(() => {
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, isThinking, liveAnswer, thinkingStatus])
+    const feed = feedRef.current
+    if (!feed || !shouldStickToBottomRef.current) return undefined
+    if (scrollFrameRef.current) window.cancelAnimationFrame(scrollFrameRef.current)
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = 0
+      feed.scrollTop = feed.scrollHeight
+    })
+    return () => {
+      if (scrollFrameRef.current) {
+        window.cancelAnimationFrame(scrollFrameRef.current)
+        scrollFrameRef.current = 0
+      }
+    }
+  }, [messages.length, isThinking, liveAnswer, thinkingStatus])
 
   if (authView) return <AuthScreen onSignedIn={completeSignIn} />
 
