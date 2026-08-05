@@ -24,11 +24,41 @@ const suggestions = [
 ]
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+const AUTH_TOKEN_KEY = 'nexa.auth.token'
 const LOCATION_CACHE_PREFIX = 'nexa.location.'
 const LOCATION_CACHE_TTL = 1000 * 60 * 30
 const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 
 const locationRequestPattern = /\b(?:near me|around me|nearby|closest|nearest|from me|where am i|my location|directions?|route|distance|how far|how long|travel time|away|local|near my|restaurants?|cafes?|coffee shops?|hotels?|attractions?|pharmacies|hospitals?|gas stations?|petrol pumps?|atms?|parking|weather|forecast|traffic|places?)\b/i
+
+function readAuthToken() {
+  try {
+    return window.localStorage.getItem(AUTH_TOKEN_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+function writeAuthToken(token = '') {
+  try {
+    if (token) window.localStorage.setItem(AUTH_TOKEN_KEY, token)
+    else window.localStorage.removeItem(AUTH_TOKEN_KEY)
+  } catch {
+    // Auth still falls back to cookies when local storage is unavailable.
+  }
+}
+
+function authHeaders(headers = {}) {
+  const token = readAuthToken()
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers
+}
+
+function apiFetch(resource, options = {}) {
+  return fetch(resource, {
+    ...options,
+    headers: authHeaders(options.headers || {}),
+  })
+}
 
 function formatMessageTime(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value)
@@ -533,12 +563,13 @@ function AuthScreen({ onSignedIn }) {
     setBusy(true)
     setError('')
     try {
-      const response = await fetch(`${API_BASE}/api/auth/${mode === 'login' ? 'login' : 'register'}`, {
+      const response = await apiFetch(`${API_BASE}/api/auth/${mode === 'login' ? 'login' : 'register'}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ name, email, password }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.detail || 'Could not sign in.')
+      writeAuthToken(data.token || '')
       onSignedIn(data.user)
     } catch (requestError) {
       setError(requestError.message || 'Could not sign in.')
@@ -637,7 +668,7 @@ function App() {
   }, [])
 
   const loadChatSessions = useCallback(async () => {
-    const response = await fetch(`${API_BASE}/api/chats`, { credentials: 'include' })
+    const response = await apiFetch(`${API_BASE}/api/chats`, { credentials: 'include' })
     if (!response.ok) throw new Error('Could not load chat sessions.')
     const sessions = (await response.json()).sessions || []
     setChatSessions(sessions)
@@ -645,7 +676,7 @@ function App() {
   }, [])
 
   const createChatSession = useCallback(async () => {
-    const response = await fetch(`${API_BASE}/api/chats`, { method: 'POST', credentials: 'include' })
+    const response = await apiFetch(`${API_BASE}/api/chats`, { method: 'POST', credentials: 'include' })
     const data = await response.json()
     if (!response.ok) throw new Error(data.detail || 'Could not create a chat.')
     setChatSessions((current) => [data.session, ...current])
@@ -655,7 +686,7 @@ function App() {
   }, [])
 
   const openChatSession = useCallback(async (sessionId) => {
-    const response = await fetch(`${API_BASE}/api/chats/${sessionId}/messages`, { credentials: 'include' })
+    const response = await apiFetch(`${API_BASE}/api/chats/${sessionId}/messages`, { credentials: 'include' })
     const data = await response.json()
     if (!response.ok) {
       const error = new Error(data.detail || 'Could not open this chat.')
@@ -671,7 +702,7 @@ function App() {
 
   const loadParticipants = useCallback(async (sessionId = activeSessionId) => {
     if (!sessionId) return
-    const response = await fetch(`${API_BASE}/api/chats/${sessionId}/participants`, { credentials: 'include' })
+    const response = await apiFetch(`${API_BASE}/api/chats/${sessionId}/participants`, { credentials: 'include' })
     const data = await response.json()
     if (!response.ok) throw new Error(data.detail || 'Could not load chat members.')
     setParticipants(data.participants || [])
@@ -682,7 +713,7 @@ function App() {
     if (!activeSessionId || sessionRole !== 'admin') return
     setMemberBusy('invite')
     try {
-      const response = await fetch(`${API_BASE}/api/chats/${activeSessionId}/invites`, { method: 'POST', credentials: 'include' })
+      const response = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}/invites`, { method: 'POST', credentials: 'include' })
       const data = await response.json()
       if (!response.ok) throw new Error(data.detail || 'Could not create an invite.')
       const link = `${window.location.origin}/join/${data.token}`
@@ -709,7 +740,7 @@ function App() {
   const changeParticipantRole = useCallback(async (participant, role) => {
     setMemberBusy(participant.user_id)
     try {
-      const response = await fetch(`${API_BASE}/api/chats/${activeSessionId}/participants/${participant.user_id}/role`, {
+      const response = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}/participants/${participant.user_id}/role`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ role }),
       })
       const data = await response.json()
@@ -726,7 +757,7 @@ function App() {
   const removeParticipant = useCallback(async (participant) => {
     setMemberBusy(participant.user_id)
     try {
-      const response = await fetch(`${API_BASE}/api/chats/${activeSessionId}/participants/${participant.user_id}`, { method: 'DELETE', credentials: 'include' })
+      const response = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}/participants/${participant.user_id}`, { method: 'DELETE', credentials: 'include' })
       const data = await response.json()
       if (!response.ok) throw new Error(data.detail || 'Could not remove this member.')
       await loadParticipants()
@@ -743,7 +774,7 @@ function App() {
     setDeletingSessionId(sessionId)
     setApiError('')
     try {
-      const response = await fetch(`${API_BASE}/api/chats/${sessionId}`, {
+      const response = await apiFetch(`${API_BASE}/api/chats/${sessionId}`, {
         method: 'DELETE',
         credentials: 'include',
       })
@@ -856,7 +887,7 @@ function App() {
   const acceptInviteFromUrl = useCallback(async () => {
     const token = /^\/join\/([^/]+)$/.exec(window.location.pathname)?.[1]
     if (!token) return false
-    const response = await fetch(`${API_BASE}/api/chats/invites/accept`, {
+    const response = await apiFetch(`${API_BASE}/api/chats/invites/accept`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -883,7 +914,7 @@ function App() {
 
   const loadTodos = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/todos`, { credentials: 'include' })
+      const response = await apiFetch(`${API_BASE}/api/todos`, { credentials: 'include' })
       if (response.ok) setTodos((await response.json()).tasks || [])
     } catch {
       // The chat connection status already communicates backend availability.
@@ -892,7 +923,7 @@ function App() {
 
   const loadPendingEmail = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/email/pending`, { credentials: 'include' })
+      const response = await apiFetch(`${API_BASE}/api/email/pending`, { credentials: 'include' })
       if (!response.ok) return
       const data = await response.json()
       applyPendingEmail(data.pending_email || null)
@@ -903,7 +934,7 @@ function App() {
 
   const loadMcpServers = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/mcp/servers`, { credentials: 'include' })
+      const response = await apiFetch(`${API_BASE}/api/mcp/servers`, { credentials: 'include' })
       if (!response.ok) return
       const data = await response.json()
       setMcpServers(data.servers || [])
@@ -914,7 +945,7 @@ function App() {
 
   const loadGoogleServices = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/google/status`, { credentials: 'include' })
+      const response = await apiFetch(`${API_BASE}/api/google/status`, { credentials: 'include' })
       if (!response.ok) return
       const data = await response.json()
       setGoogleServices(data.services || [])
@@ -925,7 +956,7 @@ function App() {
 
   const loadCapabilities = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/capabilities`, { credentials: 'include' })
+      const response = await apiFetch(`${API_BASE}/api/capabilities`, { credentials: 'include' })
       if (!response.ok) return
       setCapabilities(await response.json())
     } catch {
@@ -934,7 +965,10 @@ function App() {
   }, [])
 
   const connectGoogleService = useCallback((service) => {
-    window.location.assign(`${API_BASE}/api/google/connect/${service}`)
+    const url = new URL(`${API_BASE}/api/google/connect/${service}`, window.location.origin)
+    const token = readAuthToken()
+    if (token) url.searchParams.set('auth_token', token)
+    window.location.assign(url.toString())
   }, [])
 
   const disconnectGoogleService = useCallback(async (service) => {
@@ -942,7 +976,7 @@ function App() {
     setGoogleActionBusy(service)
     setApiError('')
     try {
-      const response = await fetch(`${API_BASE}/api/google/disconnect/${service}`, {
+      const response = await apiFetch(`${API_BASE}/api/google/disconnect/${service}`, {
         method: 'POST',
         credentials: 'include',
       })
@@ -960,7 +994,7 @@ function App() {
 
   const loadPendingMcpAction = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/mcp/pending`, { credentials: 'include' })
+      const response = await apiFetch(`${API_BASE}/api/mcp/pending`, { credentials: 'include' })
       if (!response.ok) return
       const data = await response.json()
       setPendingMcpAction(data.pending_action || null)
@@ -973,7 +1007,7 @@ function App() {
     const endpoint = action === 'complete'
       ? `${API_BASE}/api/todos/${task.id}/complete`
       : `${API_BASE}/api/todos/${task.id}`
-    const response = await fetch(endpoint, {
+    const response = await apiFetch(endpoint, {
       method: action === 'complete' ? 'POST' : 'DELETE',
       credentials: 'include',
     })
@@ -989,7 +1023,7 @@ function App() {
     setTodoBusy(true)
     setApiError('')
     try {
-      const response = await fetch(`${API_BASE}/api/todos`, {
+      const response = await apiFetch(`${API_BASE}/api/todos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -1072,7 +1106,7 @@ function App() {
     setEmailActionBusy(action)
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE}/api/email/pending/${pendingEmail.id}/${action}`,
         {
           method: 'POST',
@@ -1122,7 +1156,7 @@ function App() {
     setMcpActionBusy(action)
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE}/api/mcp/pending/${pendingMcpAction.id}/${action}`,
         {
           method: 'POST',
@@ -1226,7 +1260,7 @@ function App() {
         formData.append('question', agentPrompt)
         formData.append('session_id', activeSessionId)
         formData.append('file', attachedPdf)
-        const response = await fetch(`${API_BASE}/api/pdf/ask`, {
+        const response = await apiFetch(`${API_BASE}/api/pdf/ask`, {
           method: 'POST',
           body: formData,
           credentials: 'include',
@@ -1263,7 +1297,7 @@ function App() {
       }
 
       if (/^doc:\s*/i.test(agentPrompt)) {
-        const response = await fetch(`${API_BASE}/api/documents/query`, {
+        const response = await apiFetch(`${API_BASE}/api/documents/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -1302,7 +1336,7 @@ function App() {
           throw new Error(latestLocationState?.error || browserLocation.error || 'Nexa could not access browser location.')
         }
       }
-      const response = await fetch(`${API_BASE}/api/chat/stream`, {
+      const response = await apiFetch(`${API_BASE}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: cleanMessage, session_id: activeSessionId, ...(chatLocation ? { location: chatLocation } : {}), ...(selectedReply ? { reply_to_id: selectedReply.id } : {}) }),
@@ -1446,6 +1480,8 @@ function App() {
       apiUrl.protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'
       apiUrl.pathname = `/api/chats/${activeSessionId}/live`
       apiUrl.search = ''
+      const authToken = readAuthToken()
+      if (authToken) apiUrl.searchParams.set('auth_token', authToken)
       const socket = new WebSocket(apiUrl.toString())
       sessionSocketRef.current = socket
 
@@ -1503,7 +1539,10 @@ function App() {
   useEffect(() => {
     const loadNexa = async () => {
       try {
-        const authResponse = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+        const params = new URLSearchParams(window.location.search)
+        const authToken = params.get('token') || ''
+        if (authToken) writeAuthToken(authToken)
+        const authResponse = await apiFetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
         if (authResponse.ok) {
           const auth = await authResponse.json()
           setUser(auth.user)
@@ -1524,13 +1563,13 @@ function App() {
           googleServicesResponse,
           capabilitiesResponse,
         ] = await Promise.all([
-          fetch(`${API_BASE}/api/health`, { credentials: 'include' }),
-          fetch(`${API_BASE}/api/todos`, { credentials: 'include' }),
-          fetch(`${API_BASE}/api/email/pending`, { credentials: 'include' }),
-          fetch(`${API_BASE}/api/mcp/servers`, { credentials: 'include' }),
-          fetch(`${API_BASE}/api/mcp/pending`, { credentials: 'include' }),
-          fetch(`${API_BASE}/api/google/status`, { credentials: 'include' }),
-          fetch(`${API_BASE}/api/capabilities`, { credentials: 'include' }),
+          apiFetch(`${API_BASE}/api/health`, { credentials: 'include' }),
+          apiFetch(`${API_BASE}/api/todos`, { credentials: 'include' }),
+          apiFetch(`${API_BASE}/api/email/pending`, { credentials: 'include' }),
+          apiFetch(`${API_BASE}/api/mcp/servers`, { credentials: 'include' }),
+          apiFetch(`${API_BASE}/api/mcp/pending`, { credentials: 'include' }),
+          apiFetch(`${API_BASE}/api/google/status`, { credentials: 'include' }),
+          apiFetch(`${API_BASE}/api/capabilities`, { credentials: 'include' }),
         ])
         if (!healthResponse.ok) throw new Error()
         if (todosResponse.ok) setTodos((await todosResponse.json()).tasks || [])
@@ -1549,11 +1588,10 @@ function App() {
         if (capabilitiesResponse.ok) {
           setCapabilities(await capabilitiesResponse.json())
         }
-        const params = new URLSearchParams(window.location.search)
         if (params.get('google') === 'error') {
           setApiError(params.get('detail') || 'Google account connection was not completed.')
         }
-        if (params.has('google')) window.history.replaceState({}, '', window.location.pathname)
+        if (params.has('google') || params.has('auth') || params.has('token')) window.history.replaceState({}, '', window.location.pathname)
         setIsOnline(true)
       } catch {
         setIsOnline(false)
@@ -1619,7 +1657,7 @@ function App() {
       }
 
       setMicError("Transcribing your voice locally...")
-      const response = await fetch(`${API_BASE}/api/transcribe`, {
+      const response = await apiFetch(`${API_BASE}/api/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
