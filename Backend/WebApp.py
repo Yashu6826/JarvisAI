@@ -99,6 +99,7 @@ from Backend.MongoStore import (
     list_chat_sessions,
     list_chat_participants,
     load_messages,
+    mark_chat_session_read,
     owns_chat_session,
     password_user,
     revoke_auth_session,
@@ -138,12 +139,14 @@ class SessionConnectionManager:
             if not connections:
                 self._connections.pop(session_id, None)
 
-    async def broadcast(self, session_id: str, event: dict) -> None:
+    async def broadcast(self, session_id: str, event: dict, exclude: WebSocket | None = None) -> None:
         async with self._lock:
             connections = list(self._connections.get(session_id, set()))
         stale: list[WebSocket] = []
         payload = json.dumps(event, ensure_ascii=False)
         for websocket in connections:
+            if websocket is exclude:
+                continue
             try:
                 await websocket.send_text(payload)
             except Exception:
@@ -535,6 +538,15 @@ async def create_session_message_api(session_id: str, payload: SessionMessageReq
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@app.post("/api/chats/{session_id}/read")
+def mark_session_read_api(session_id: str, request: Request) -> dict:
+    user = _require_chat_session(request, session_id)
+    try:
+        return {"read": mark_chat_session_read(session_id, user["id"])}
+    except StoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @app.get("/api/chats/{session_id}/participants")
 def chat_participants_api(session_id: str, request: Request) -> dict:
     user = _require_chat_session(request, session_id)
@@ -618,6 +630,18 @@ async def chat_live_socket(session_id: str, websocket: WebSocket) -> None:
             except json.JSONDecodeError:
                 await websocket.send_text(json.dumps({"type": "error", "message": "Invalid message payload."}))
                 continue
+            if payload.get("type") == "typing":
+                await live_sessions.broadcast(
+                    session_id,
+                    {
+                        "type": "typing",
+                        "user_id": user["id"],
+                        "name": user["name"],
+                        "is_typing": bool(payload.get("is_typing")),
+                    },
+                    exclude=websocket,
+                )
+                continue
             if payload.get("type") != "message":
                 continue
             content = str(payload.get("content") or "").strip()
@@ -633,6 +657,11 @@ async def chat_live_socket(session_id: str, websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        await live_sessions.broadcast(
+            session_id,
+            {"type": "typing", "user_id": user["id"], "name": user["name"], "is_typing": False},
+            exclude=websocket,
+        )
         await live_sessions.disconnect(session_id, websocket)
 
 

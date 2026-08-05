@@ -113,3 +113,13 @@ Traceback (most recent call last):
 langgraph.errors.GraphRecursionError: Recursion limit of 6 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
 For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT
 2026-08-02 18:18:16,974 INFO perception.direct_reply_context intent=reply to chat message tools=
+2026-08-06 03:22:01,276 INFO geoapify.destination scope=local_200km empty_result; retrying_global=true
+2026-08-06 03:22:01,277 INFO geoapify.destination scope=global selected={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963}
+2026-08-06 03:22:01,278 INFO geoapify.destination scope=local_200km selected={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963}
+2026-08-06 03:22:01,278 INFO geoapify.route.resolve origin={'latitude': 13.05, 'longitude': 77.6, 'formatted': 'Current browser location'} destination={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963} mode=drive
+2026-08-06 03:22:01,278 WARNING geoapify.places scope=local_200000m error=Geoapify is not configured. Add GEOAPIFY_API_KEY to the project's .env file.; retrying_global=true
+2026-08-06 03:22:28,990 INFO geoapify.destination scope=local_200km empty_result; retrying_global=true
+2026-08-06 03:22:28,991 INFO geoapify.destination scope=global selected={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963}
+2026-08-06 03:22:28,991 INFO geoapify.destination scope=local_200km selected={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963}
+2026-08-06 03:22:28,991 INFO geoapify.route.resolve origin={'latitude': 13.05, 'longitude': 77.6, 'formatted': 'Current browser location'} destination={'formatted': 'Yelahanka Railway Station, Bengaluru', 'latitude': 13.1007, 'longitude': 77.5963} mode=drive
+2026-08-06 03:22:28,992 WARNING geoapify.places scope=local_200000m error=Geoapify is not configured. Add GEOAPIFY_API_KEY to the project's .env file.; retrying_global=true
