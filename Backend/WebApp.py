@@ -76,6 +76,7 @@ from Backend.GoogleOAuth import (
     new_session_id,
     service_status,
     start_authorization,
+    google_oauth_redirect_uri,
 )
 from Backend.MCPManager import (
     MCPExecutionError,
@@ -671,6 +672,22 @@ def google_status_api(request: Request) -> JSONResponse:
     if not _google_session_id(request):
         _set_google_session_cookie(response, session_id)
     return response
+
+
+@app.get("/api/debug/oauth", include_in_schema=False)
+def oauth_debug_api() -> dict:
+    app_base_url = _app_base_url()
+    return {
+        "app_base_url": app_base_url,
+        "cors_allowed_origins": _csv_config("CORS_ALLOWED_ORIGINS"),
+        "google_signin_client_configured": bool(get_config("GOOGLE_SIGNIN_CLIENT_ID", "").strip()),
+        "google_signin_redirect_uri": get_config(
+            "GOOGLE_SIGNIN_REDIRECT_URI",
+            f"{app_base_url}/api/auth/google/callback",
+        ).strip(),
+        "google_oauth_client_configured": bool(get_config("GOOGLE_OAUTH_CLIENT_ID", "").strip()),
+        "google_oauth_redirect_uri": google_oauth_redirect_uri(),
+    }
 
 
 @app.get("/api/google/connect/{service}")
