@@ -5989,6 +5989,19 @@ button {
   opacity: 0.5;
 }
 
+.message-content,
+.message-content p,
+.markdown-body,
+.markdown-body * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.message.user .message-content,
+.message.user .message-content > p {
+  cursor: text !important;
+}
+
 /* Agent mention polish: make @Agent selection read like a recipient control. */
 .composer-workspace-hint,
 .app-shell.theme-light .composer-workspace-hint {

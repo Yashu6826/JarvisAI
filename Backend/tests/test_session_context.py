@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from Backend.AgentArchitecture import Workflow, build_context, route_request
-from Backend.SessionContext import derive_context, follow_up_query, prompt_block
+from Backend.AgentArchitecture import build_context
+from Backend.SessionContext import derive_context, prompt_block
 
 
 class SessionContextTests(unittest.TestCase):
@@ -35,18 +35,21 @@ class SessionContextTests(unittest.TestCase):
         self.assertNotIn("Alice private result", block)
         self.assertIn("Shared result", block)
 
-    def test_follow_up_routing_continues_previous_research_workflow(self) -> None:
-        session = {"last_workflow": "research", "last_domains": ["web"]}
-        decision = route_request("Is it open tomorrow?", session_context=session)
-        self.assertEqual(decision.workflow, Workflow.RESEARCH)
-        self.assertEqual(decision.domains, ["web"])
+    def test_context_contains_conversation_not_tool_routing_instructions(self) -> None:
+        context = derive_context(
+            [
+                {"id": "1", "role": "user", "sender_name": "Alice", "content": "Summarize my Gmail.", "visibility": "shared"},
+                {"id": "2", "role": "assistant", "content": "Here is the summary.", "visibility": "shared"},
+            ],
+            user_id="alice",
+            last_workflow="personal_app",
+            last_domains=["gmail"],
+        )
 
-    def test_follow_up_signal_does_not_copy_old_transcript_into_routing(self) -> None:
-        session = {"last_workflow": "research", "last_domains": ["web"]}
-        routed = follow_up_query("Compare it with the second one", session)
-        self.assertIn("Compare it with the second one", routed)
-        self.assertIn("workflow=research", routed)
-        self.assertNotIn("password", routed)
+        block = prompt_block(context)
+        self.assertIn("Summarize my Gmail", block)
+        self.assertNotIn("workflow=personal_app", block)
+        self.assertNotIn("domains=gmail", block)
 
     def test_agent_context_uses_session_context_when_available(self) -> None:
         with patch(

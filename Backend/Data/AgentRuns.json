@@ -146,5 +146,273 @@
     "selected_tools": [],
     "tool_calls": [],
     "error": ""
+  },
+  {
+    "id": "80e73bea-57bb-4f28-a503-2e9eb854518a",
+    "started_at": "2026-08-22T05:55:56.331834+00:00",
+    "completed_at": "2026-08-22T05:56:17.547436+00:00",
+    "status": "completed",
+    "workflow": "personal_app",
+    "domains": [
+      "gmail"
+    ],
+    "session_id": "395addcc-c031-4f6a-a029-8d846ce1c5b5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 82,
+    "selected_tools": [],
+    "tool_calls": [],
+    "error": ""
+  },
+  {
+    "id": "d1ef1d92-c80b-47ca-82b0-9a0c4a25dad5",
+    "started_at": "2026-08-22T05:58:40.258258+00:00",
+    "completed_at": "2026-08-22T05:59:12.512982+00:00",
+    "status": "completed",
+    "workflow": "personal_app",
+    "domains": [
+      "gmail"
+    ],
+    "session_id": "395addcc-c031-4f6a-a029-8d846ce1c5b5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 113,
+    "selected_tools": [],
+    "tool_calls": [],
+    "error": ""
+  },
+  {
+    "id": "22786669-ef84-4598-a9fe-80cfe6c4738b",
+    "started_at": "2026-08-22T06:00:11.339723+00:00",
+    "completed_at": "2026-08-22T06:01:24.817417+00:00",
+    "status": "completed",
+    "workflow": "direct",
+    "domains": [],
+    "session_id": "8bd2da26-4aa5-4689-ba87-3730d2fe1ac5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 64,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "36fbfadd-09d1-41ef-96d4-1f33290b80d1",
+    "started_at": "2026-08-22T16:35:35.559372+00:00",
+    "completed_at": "2026-08-22T16:36:22.218643+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "8bd2da26-4aa5-4689-ba87-3730d2fe1ac5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 80,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "5ed1d07e-acd7-4ee9-bf9a-8bc4c31f2589",
+    "started_at": "2026-08-22T16:39:25.210756+00:00",
+    "completed_at": "2026-08-22T16:40:20.416303+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "8bd2da26-4aa5-4689-ba87-3730d2fe1ac5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 62,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "e570e508-1489-4c0d-87bf-78171e521f52",
+    "started_at": "2026-08-22T16:42:38.348558+00:00",
+    "completed_at": "2026-08-22T16:43:13.593203+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "8bd2da26-4aa5-4689-ba87-3730d2fe1ac5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 91,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "f00ac45a-1606-4e61-97f4-9906b8c1a777",
+    "started_at": "2026-08-22T16:44:32.473318+00:00",
+    "completed_at": "2026-08-22T16:44:39.558485+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "8bd2da26-4aa5-4689-ba87-3730d2fe1ac5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 81,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [],
+    "error": ""
+  },
+  {
+    "id": "ea19e3af-8f64-46ac-aea0-843183872436",
+    "started_at": "2026-08-22T16:50:33.512756+00:00",
+    "completed_at": "2026-08-22T16:51:16.778103+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "8bd2da26-4aa5-4689-ba87-3730d2fe1ac5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 60,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "e49076cf-3671-446c-b236-1bb860977033",
+    "started_at": "2026-08-22T16:52:27.290445+00:00",
+    "completed_at": "2026-08-22T16:53:01.592771+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "8bd2da26-4aa5-4689-ba87-3730d2fe1ac5",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 79,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "e19159c9-dff5-43f2-ad6f-68754ba668b9",
+    "started_at": "2026-08-22T17:36:12.459067+00:00",
+    "completed_at": "2026-08-22T17:37:05.315324+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "c60088cd-7a07-4af1-8203-d2f3400e04bc",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 41,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "2043fd41-c4c9-4bdc-bf97-64dd77c9fd93",
+    "started_at": "2026-08-22T17:38:40.590806+00:00",
+    "completed_at": "2026-08-22T17:39:46.135986+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "c60088cd-7a07-4af1-8203-d2f3400e04bc",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 111,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "971822bc-a2f7-43d3-80cc-e8f977c6e664",
+    "started_at": "2026-08-22T17:45:13.859603+00:00",
+    "completed_at": "2026-08-22T17:45:45.836677+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "176e0a7a-d758-4484-b3d6-669f3ab07024",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 85,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "fb73837e-e009-4bd1-9f0b-d14bdef9e1cd",
+    "started_at": "2026-08-22T17:46:11.667337+00:00",
+    "completed_at": "2026-08-22T17:46:41.943632+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "176e0a7a-d758-4484-b3d6-669f3ab07024",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 76,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
+  },
+  {
+    "id": "f7a77a52-15a5-4209-b204-3ba1241e2635",
+    "started_at": "2026-08-22T17:49:23.943480+00:00",
+    "completed_at": "2026-08-22T17:50:25.009801+00:00",
+    "status": "completed",
+    "workflow": "research",
+    "domains": [
+      "web"
+    ],
+    "session_id": "176e0a7a-d758-4484-b3d6-669f3ab07024",
+    "user_id": "7bdbba13-d432-426c-be17-7fb484c19612",
+    "request_chars": 93,
+    "selected_tools": [
+      "research_web"
+    ],
+    "tool_calls": [
+      "research_web"
+    ],
+    "error": ""
   }
 ]

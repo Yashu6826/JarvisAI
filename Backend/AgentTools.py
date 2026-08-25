@@ -302,10 +302,16 @@ def _research_queries(query: str, additional_queries: str = "") -> list[str]:
             queries.append(cleaned)
         if len(queries) >= 3:
             break
-    if len(queries) == 1 and re.search(r"\b(?:latest|current|today|news|price|compare|comparison|research|report)\b", query, re.I):
+    if len(queries) == 1 and re.search(
+        r"\b(?:latest|current|today|news|price|pricing|compare|comparison|"
+        r"research|report|recommend(?:ation|ations|ed|ing)?|best|top|"
+        r"available|availability|streaming|subscription|where to watch)\b",
+        query,
+        re.I,
+    ):
         current_year = str(dt.datetime.now().year)
         if current_year not in query:
-            queries.append(f"{query} {current_year}")
+            queries.insert(0, f"{query} {current_year}")
     return queries[:3]
 
 

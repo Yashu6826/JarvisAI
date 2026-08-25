@@ -52,6 +52,11 @@ OPENROUTER_TIMEOUT_SECONDS = int(
 OPENROUTER_HTTP_REFERER = get_config("OPENROUTER_HTTP_REFERER", "")
 OPENROUTER_APP_TITLE = get_config("OPENROUTER_APP_TITLE", "NEXA")
 
+OPENAI_BASE_URL = get_config("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+OPENAI_API_KEY = get_config("OPENAI_API_KEY", "")
+PERSONA_OPENAI_MODEL = get_config("PERSONA_OPENAI_MODEL", "gpt-5.4-mini")
+OPENAI_TIMEOUT_SECONDS = int(get_config("OPENAI_TIMEOUT_SECONDS", "120"))
+
 EMBEDDING_BASE_URL = get_config("EMBEDDING_BASE_URL", LMSTUDIO_BASE_URL).rstrip("/")
 EMBEDDING_MODEL = get_config("EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5")
 EMBEDDING_API_KEY = get_config("EMBEDDING_API_KEY", "lm-studio")
@@ -317,7 +322,15 @@ def openrouter_generate(
             response.raise_for_status()
         except requests.HTTPError as exc:
             raise LocalLLMUnavailable(_openrouter_http_error(response)) from exc
-        content = str(response.json()["choices"][0]["message"].get("content") or "").strip()
+        payload = response.json()
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        if not isinstance(choices, list) or not choices:
+            error = payload.get("error") if isinstance(payload, dict) else None
+            detail = error.get("message") if isinstance(error, dict) else str(error or "")
+            raise LocalLLMUnavailable(
+                f"OpenRouter returned no completion choices{f': {detail}' if detail else ''}."
+            )
+        content = str((choices[0].get("message") or {}).get("content") or "").strip()
         if not content:
             raise LocalLLMUnavailable("OpenRouter returned an empty response.")
         return content
@@ -327,6 +340,84 @@ def openrouter_generate(
         ) from exc
     except (KeyError, TypeError, ValueError) as exc:
         raise LocalLLMUnavailable("OpenRouter returned an unexpected response.") from exc
+
+
+def openai_generate(
+    prompt: str,
+    system: str = "",
+    model: str | None = None,
+    temperature: float = 0.5,
+    reasoning: str | None = None,
+    max_output_tokens: int | None = None,
+) -> str:
+    api_key = get_config("OPENAI_API_KEY", OPENAI_API_KEY)
+    if not api_key:
+        raise LocalLLMUnavailable("OPENAI_API_KEY is not configured for Persona analysis.")
+    selected_model = model or get_config("PERSONA_OPENAI_MODEL", PERSONA_OPENAI_MODEL)
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    payload = {
+        "model": selected_model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if reasoning and reasoning != "off":
+        payload["reasoning_effort"] = reasoning
+    if max_output_tokens is not None:
+        payload["max_completion_tokens"] = max_output_tokens
+    try:
+        response = requests.post(
+            f"{OPENAI_BASE_URL}/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            timeout=OPENAI_TIMEOUT_SECONDS,
+        )
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            detail = ""
+            try:
+                error = response.json().get("error") or {}
+                detail = str(error.get("message") or "") if isinstance(error, dict) else str(error)
+            except ValueError:
+                detail = response.text[:300]
+            suffix = f": {detail}" if detail else ""
+            raise LocalLLMUnavailable(f"OpenAI returned HTTP {response.status_code}{suffix}") from exc
+        data = response.json()
+        choices = data.get("choices") if isinstance(data, dict) else None
+        if not isinstance(choices, list) or not choices:
+            raise LocalLLMUnavailable("OpenAI returned no completion choices.")
+        content = str((choices[0].get("message") or {}).get("content") or "").strip()
+        if not content:
+            raise LocalLLMUnavailable("OpenAI returned an empty completion.")
+        return content
+    except requests.RequestException as exc:
+        raise LocalLLMUnavailable(f"OpenAI is not reachable: {type(exc).__name__}: {exc}") from exc
+    except (TypeError, ValueError) as exc:
+        raise LocalLLMUnavailable("OpenAI returned an unexpected response.") from exc
+
+
+def generate_persona_text(
+    prompt: str,
+    system: str = "",
+    model: str | None = None,
+    temperature: float = 0.5,
+    reasoning: str | None = None,
+    max_output_tokens: int | None = None,
+) -> str:
+    """Prefer a dedicated OpenAI model for Persona without changing normal chat routing."""
+    if get_config("OPENAI_API_KEY", OPENAI_API_KEY):
+        return openai_generate(
+            prompt,
+            system,
+            model or get_config("PERSONA_OPENAI_MODEL", PERSONA_OPENAI_MODEL),
+            temperature,
+            reasoning,
+            max_output_tokens,
+        )
+    return generate_text(prompt, system, model, temperature, reasoning, max_output_tokens)
 
 
 def generate_text(
@@ -341,6 +432,8 @@ def generate_text(
         try:
             return openrouter_generate(prompt, system, _openrouter_model(model), temperature, reasoning, max_output_tokens)
         except LocalLLMUnavailable as primary_exc:
+            if "HTTP 429" in str(primary_exc) or "quota" in str(primary_exc).casefold() or "credits" in str(primary_exc).casefold():
+                raise
             logger.warning("OpenRouter primary unavailable, trying OpenRouter fallback: %s", primary_exc)
             return openrouter_generate(prompt, system, OPENROUTER_FALLBACK_MODEL, temperature, reasoning, max_output_tokens)
     if LLM_PROVIDER == "lmstudio":

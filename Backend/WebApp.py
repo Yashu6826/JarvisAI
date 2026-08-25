@@ -76,13 +76,17 @@ from Backend.PDFQA import (
     remember_pdf_document,
 )
 from Backend.Persona import (
+    create_chat_import,
     delete_persona,
+    delete_chat_import,
+    list_chat_imports,
     persona_image,
     persona_snapshot,
     queue_persona_run,
     persona_agent_instructions,
     simulate_twin,
     suppress_source,
+    update_chat_import,
     update_controls,
     update_observation,
 )
@@ -502,6 +506,53 @@ def get_persona_api(request: Request) -> JSONResponse:
     user = _authenticated_user(request)
     try:
         return _private_json(persona_snapshot(user["id"]))
+    except StoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/persona/chat-imports")
+def list_persona_chat_imports_api(request: Request) -> JSONResponse:
+    user = _authenticated_user(request)
+    try:
+        return _private_json({"chat_imports": list_chat_imports(user["id"])})
+    except StoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/persona/chat-imports", status_code=201)
+async def create_persona_chat_import_api(request: Request, file: UploadFile = File(...)) -> JSONResponse:
+    user = _authenticated_user(request)
+    try:
+        content = await file.read()
+        imported = await run_in_threadpool(create_chat_import, user["id"], file.filename or "chat.txt", content)
+        return _private_json({"chat_import": imported}, status_code=201)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.patch("/api/persona/chat-imports/{import_id}")
+async def update_persona_chat_import_api(import_id: str, request: Request) -> JSONResponse:
+    user = _authenticated_user(request)
+    payload = await request.json()
+    try:
+        updated = update_chat_import(user["id"], import_id, bool(payload.get("include_in_merged")))
+        return _private_json({"chat_import": updated})
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except StoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.delete("/api/persona/chat-imports/{import_id}")
+def delete_persona_chat_import_api(import_id: str, request: Request) -> JSONResponse:
+    user = _authenticated_user(request)
+    try:
+        delete_chat_import(user["id"], import_id)
+        return _private_json({"deleted": True})
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except StoreUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

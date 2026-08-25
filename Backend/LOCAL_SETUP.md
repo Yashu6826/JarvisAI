@@ -115,6 +115,22 @@ For a public deployment, change `GOOGLE_OAUTH_REDIRECT_URI` to your HTTPS
 domain callback, add that exact URI to the Google OAuth client, and set
 `GOOGLE_OAUTH_COOKIE_SECURE="true"`.
 
+## 6. Optional Serper web-search provider
+
+Normal chat can search without an API key through its DuckDuckGo and Bing
+fallbacks. For more consistent Google search results, add a Serper key to the
+backend `.env`:
+
+```env
+SERPER_API_KEY="..."
+SERPER_COUNTRY_CODE="in"
+SERPER_LANGUAGE_CODE="en"
+```
+
+Serper is used first when configured; unavailable, unsafe, or irrelevant
+results automatically fall through to the other providers. The key is never
+sent to the browser. Restart Nexa after changing these values.
+
 ## 7. Geoapify places and directions
 
 Nexa can find nearby places, resolve addresses, and calculate driving, walking,
@@ -171,11 +187,16 @@ environment file points the Vite app at the local NEXA API.
 
 ## Agent flow
 
-Each request enters a LangGraph `Brain -> Tools -> Brain` loop. The model can
-answer normally, search the live web, open an exact website URL, control an
-installed application, change volume, manage tasks, draft emails, send Gmail
-messages, create a local document, or use configured MCP tools from connected
-services. Tool results are returned to the brain
-before it writes the final response. The React UI receives safe planning and
-tool progress plus answer tokens over the existing SSE endpoint; it never
-receives private model chain-of-thought.
+For every request, the semantic perception planner receives the complete set of
+currently available tools and their descriptions. It selects the smallest
+exact tool set from that closed catalog; natural-language intent is not routed
+through keyword or regex gates. Session history is supplied only as continuity
+data for references, while an explicit current request always takes priority.
+
+The validated plan then enters a LangGraph `Brain -> Tools -> Brain` loop. Tool
+identity is used to derive workflow/audit metadata after planning. Deterministic
+code still enforces availability, closed tool names, call limits, explicit
+action checks, and confirmation for sensitive operations. Tool results are
+returned to the brain before it writes the final response. The React UI receives
+safe planning and tool progress plus answer tokens over the existing SSE
+endpoint; it never receives private model chain-of-thought.

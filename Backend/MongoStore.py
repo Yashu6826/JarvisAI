@@ -79,6 +79,8 @@ def _db():
             [("status", ASCENDING), ("available_at", ASCENDING), ("lease_expires_at", ASCENDING)]
         )
         _database.persona_profiles.create_index("user_id", unique=True)
+        _database.persona_chat_imports.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+        _database.persona_chat_imports.create_index([("user_id", ASCENDING), ("id", ASCENDING)], unique=True)
         _database.persona_images.create_index("user_id", unique=True)
         _database.persona_simulations.create_index(
             [("user_id", ASCENDING), ("created_at", DESCENDING)]
