@@ -14,6 +14,7 @@ import os
 import re
 import threading
 import uuid
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -26,8 +27,9 @@ from PIL import Image
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from Backend.LLMProvider import generate_text, get_config
+from Backend.LLMProvider import generate_persona_text as generate_text, get_config
 from Backend.MongoStore import StoreUnavailable, _db
+from Backend.ChatImport import analyze_upload
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,9 @@ MIN_MEANINGFUL_MESSAGES = 12
 MIN_MEANINGFUL_WORDS = 700
 MAX_BATCH_CHARS = 14_000
 MAX_MESSAGE_CHARS = 5_000
+MAX_ANALYSIS_BATCHES = 8
+MAX_LLM_SAMPLE_MESSAGES = 8
+MAX_LLM_SAMPLE_CHARS = 700
 MAX_IMAGE_BYTES = 3_000_000
 LEASE_DURATION = timedelta(minutes=10)
 
@@ -290,11 +295,86 @@ def persona_snapshot(user_id: str) -> dict[str, Any]:
         public_profile = _iso({key: value for key, value in profile.items() if key not in {"_id", "user_id", "suppressed_source_ids", "hidden_observation_keys"}})
         public_profile["has_image"] = has_image
         public_profile["image_url"] = "/api/persona/image" if has_image else ""
+    imports = list_chat_imports(user_id)
     return {
         "profile": public_profile,
         "run": _public_run(active_run or latest_run),
         "is_processing": bool(active_run),
+        "chat_imports": imports,
     }
+
+
+@_translate_store_errors
+def list_chat_imports(user_id: str) -> list[dict[str, Any]]:
+    collection = getattr(_db(), "persona_chat_imports", None)
+    if collection is None:
+        return []
+    items = list(collection.find({"user_id": user_id}).sort("created_at", DESCENDING))
+    return [_iso({key: value for key, value in item.items() if key not in {"_id", "user_id", "analysis"}}) | {"analysis": item.get("analysis") or {}} for item in items]
+
+
+@_translate_store_errors
+def create_chat_import(user_id: str, filename: str, content: bytes) -> dict[str, Any]:
+    analysis = analyze_upload(filename, content)
+    item = {
+        "id": str(uuid.uuid4()), "user_id": user_id, "filename": filename[:160],
+        "created_at": _now(), "include_in_merged": False, "analysis": analysis,
+    }
+    collection = getattr(_db(), "persona_chat_imports", None)
+    if collection is None:
+        raise StoreUnavailable("Chat import storage is not available yet.")
+    collection.insert_one(item)
+    return _iso({key: value for key, value in item.items() if key not in {"_id", "user_id"}})
+
+
+@_translate_store_errors
+def update_chat_import(user_id: str, import_id: str, include_in_merged: bool) -> dict[str, Any]:
+    db = _db()
+    collection = getattr(db, "persona_chat_imports", None)
+    if collection is None:
+        raise StoreUnavailable("Chat import storage is not available yet.")
+    item = collection.find_one({"id": import_id, "user_id": user_id})
+    if not item:
+        raise ValueError("Imported conversation not found.")
+    collection.update_one({"id": import_id, "user_id": user_id}, {"$set": {"include_in_merged": bool(include_in_merged), "updated_at": _now()}})
+    return {"id": import_id, "include_in_merged": bool(include_in_merged)}
+
+
+@_translate_store_errors
+def delete_chat_import(user_id: str, import_id: str) -> None:
+    collection = getattr(_db(), "persona_chat_imports", None)
+    if collection is None:
+        raise StoreUnavailable("Chat import storage is not available yet.")
+    result = collection.delete_one({"id": import_id, "user_id": user_id})
+    if not result.deleted_count:
+        raise ValueError("Imported conversation not found.")
+
+
+def _merge_imported_signals(signals: dict[str, Any], imports: list[dict[str, Any]]) -> dict[str, Any]:
+    selected = [item.get("analysis") or {} for item in imports if item.get("include_in_merged")]
+    if not selected:
+        return signals
+    total = sum(max(1, int(item.get("message_count") or 1)) for item in selected)
+    for dimension in signals.get("dimensions", []):
+        weighted = [(int(item.get("message_count") or 1), next((value for value in item.get("dimensions", []) if value.get("key") == dimension["key"]), None)) for item in selected]
+        weighted = [(weight, value) for weight, value in weighted if value]
+        if weighted:
+            imported_weight = sum(weight for weight, _ in weighted)
+            dimension["score"] = round((dimension["score"] * max(1, total - imported_weight) + sum(value["score"] * weight for weight, value in weighted)) / max(total, 1))
+            dimension["confidence"] = min(95, int(dimension.get("confidence", 35)) + 10)
+    topics = {str(item.get("name", "")).casefold(): item for item in signals.get("topics", [])}
+    for source in selected:
+        for topic in source.get("topics", []):
+            key = str(topic.get("name", "")).casefold()
+            if key and key not in topics:
+                topics[key] = {"name": topic.get("name"), "score": topic.get("score", 1), "evidence_ids": [], "evidence": []}
+    signals["topics"] = sorted(topics.values(), key=lambda item: item.get("score", 0), reverse=True)[:12]
+    observations = signals.setdefault("observations", [])
+    for source in selected:
+        for observation in source.get("observations", []):
+            observations.append({**observation, "id": str(uuid.uuid4()), "evidence_ids": [], "evidence": [], "enabled": True, "user_edited": False})
+    signals["observations"] = observations[:24]
+    return signals
 
 
 def _schedule(run_id: str) -> None:
@@ -497,6 +577,56 @@ def _message_batches(messages: list[dict[str, Any]]) -> list[list[dict[str, Any]
     return batches
 
 
+def _bounded_analysis_batches(batches: list[list[dict[str, Any]]]) -> list[list[dict[str, Any]]]:
+    """Keep model work bounded while preserving early, middle, and recent signal."""
+    if len(batches) <= MAX_ANALYSIS_BATCHES:
+        return batches
+    middle_count = MAX_ANALYSIS_BATCHES - 4
+    middle_indexes = [
+        round(2 + index * (len(batches) - 5) / max(1, middle_count - 1))
+        for index in range(middle_count)
+    ]
+    indexes = list(dict.fromkeys([0, 1, *middle_indexes, len(batches) - 2, len(batches) - 1]))
+    return [batches[index] for index in indexes]
+
+
+def _compact_batch_for_llm(batch: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reduce one local batch before it crosses the model boundary."""
+    ranked = sorted(
+        batch,
+        key=lambda item: (
+            bool(re.search(r"[?!]", str(item.get("text") or ""))),
+            len(str(item.get("text") or "")),
+        ),
+        reverse=True,
+    )
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in (batch[:2] + ranked[:MAX_LLM_SAMPLE_MESSAGES] + batch[-2:]):
+        message_id = str(item.get("id") or "")
+        if not message_id or message_id in seen:
+            continue
+        seen.add(message_id)
+        selected.append({
+            "id": message_id,
+            "context": str(item.get("context") or "Conversation")[:80],
+            "shared": bool(item.get("shared")),
+            "reply": bool(item.get("reply")),
+            "text": str(item.get("text") or "")[:MAX_LLM_SAMPLE_CHARS],
+        })
+        if len(selected) >= MAX_LLM_SAMPLE_MESSAGES:
+            break
+    all_text = " ".join(str(item.get("text") or "") for item in batch)
+    words = _clean_words(all_text)
+    return {
+        "batch_message_count": len(batch),
+        "batch_word_count": len(words),
+        "question_count": all_text.count("?"),
+        "exclamation_count": all_text.count("!"),
+        "representative_messages": selected,
+    }
+
+
 def _json_object(raw: str) -> dict[str, Any]:
     text = str(raw or "").strip()
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.I | re.S)
@@ -554,7 +684,8 @@ def _extract_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
         "identity, demographics, health, diagnoses, politics, religion, finances, intelligence, or physical appearance. "
         "Do not claim certainty. Return valid JSON only."
     )
-    prompt = f"""Analyze this batch of messages authored by one user. Extract repeated, useful signals, not one-off guesses.
+    compact_batch = _compact_batch_for_llm(batch)
+    prompt = f"""Analyze this increment of messages authored by one user. The full history was processed locally; only bounded statistics and representative excerpts are included here. Extract repeated, useful signals, not one-off guesses.
 Allowed observation categories: {json.dumps(allowed)}
 Dimension signal keys: {json.dumps(list(DIMENSION_META))}; values must be numbers from -1 to 1.
 Return exactly this shape:
@@ -563,8 +694,48 @@ Return exactly this shape:
 "dimension_signals":{{"directness":0}},"collaboration_roles":[],"decision_patterns":[],"strengths":[],"growth_edges":[]}}
 Evidence message IDs must come from the input. A growth edge must be gently worded and evidence-based.
 MESSAGES_JSON:
-{json.dumps(batch, ensure_ascii=False)}"""
+{json.dumps(compact_batch, ensure_ascii=False)}"""
     return _generate_json(prompt, system=system, temperature=0.15, reasoning="off", max_output_tokens=1800)
+
+
+def _local_extract_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
+    """Deterministic fallback used when a model/provider is unavailable."""
+    texts = [str(item.get("text") or "") for item in batch]
+    joined = " ".join(texts)
+    words = _clean_words(joined)
+    stopwords = {"the", "and", "that", "this", "with", "from", "have", "will", "your", "you", "are", "for", "but", "not", "what", "when", "where", "how", "can", "just", "like", "its", "our", "they", "i", "a", "an", "to", "of", "in", "on", "is", "it", "be", "we", "my", "me", "or", "so", "do", "if"}
+    counts = Counter(word.casefold() for word in words if len(word) > 3 and word.casefold() not in stopwords)
+    ids = [str(item.get("id")) for item in batch if item.get("id")]
+    message_count = max(1, len(texts))
+    average_words = len(words) / message_count
+    question_rate = joined.count("?") / message_count
+    topics = [{"name": word, "weight": min(10, count), "evidence_ids": ids[:3]} for word, count in counts.most_common(8)]
+    observations = []
+    if average_words >= 18:
+        observations.append({"category": "communication", "title": "Detailed communicator", "description": "Messages in this evidence sample tend to include context and explanation.", "confidence": .62, "evidence_ids": ids[:3]})
+    if question_rate >= .25:
+        observations.append({"category": "curiosity", "title": "Question-led interaction", "description": "Questions appear regularly as a way to explore or clarify.", "confidence": .62, "evidence_ids": ids[:3]})
+    if any(term in joined.casefold() for term in ("plan", "next step", "todo", "priority", "decision")):
+        observations.append({"category": "structure", "title": "Action-oriented style", "description": "Planning, priorities, or next steps appear in the conversation evidence.", "confidence": .58, "evidence_ids": ids[:3]})
+    def signal(value: float) -> float:
+        return max(-1.0, min(1.0, value))
+    return {
+        "topics": topics,
+        "observations": observations,
+        "dimension_signals": {
+            "directness": signal((joined.count("!") / message_count) * .2 + (average_words - 12) / 40),
+            "detail": signal((average_words - 10) / 25),
+            "analysis": signal(sum(joined.casefold().count(term) for term in ("because", "however", "option", "trade-off", "why")) / message_count * .15),
+            "creativity": signal(joined.casefold().count("idea") / message_count * .15),
+            "risk_tolerance": signal(question_rate * .08),
+            "supportiveness": signal(sum(joined.casefold().count(term) for term in ("thanks", "thank", "sorry", "great")) / message_count * .12),
+            "structure": signal(sum(joined.casefold().count(term) for term in ("first", "then", "step", "next")) / message_count * .14),
+        },
+        "collaboration_roles": [],
+        "decision_patterns": [],
+        "strengths": ["Shows a repeatable communication pattern in the available evidence."],
+        "growth_edges": [],
+    }
 
 
 def _merge_extractions(extractions: list[dict[str, Any]], messages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -751,6 +922,42 @@ SIGNALS_JSON:
     }
 
 
+def _local_profile_narrative(signals: dict[str, Any], readiness: dict[str, Any]) -> dict[str, Any]:
+    """Build a transparent narrative from measured signals without an LLM."""
+    dimensions = sorted(signals.get("dimensions") or [], key=lambda item: abs(int(item.get("score", 50)) - 50), reverse=True)
+    topics = signals.get("topics") or []
+    top_topic = str((topics[0] if topics else {}).get("name") or "conversation patterns")
+    direction_labels = []
+    archetypes = []
+    work_notes = []
+    for item in dimensions[:3]:
+        score = int(item.get("score", 50))
+        direction = str(item.get("high_label") if score >= 50 else item.get("low_label"))
+        direction_labels.append(direction.lower())
+        archetypes.append({"name": f"{direction} signal", "description": f"Measured at {score}/100 from message structure and vocabulary."})
+        if item.get("key") == "detail":
+            work_notes.append("Use fuller context and explicit details." if score >= 60 else "Start concise and expand only when needed.")
+        elif item.get("key") == "structure":
+            work_notes.append("Organize work into visible steps and next actions." if score >= 60 else "Leave room for exploratory discussion before fixing a plan.")
+        elif item.get("key") == "directness":
+            work_notes.append("State the main point early and clearly." if score >= 60 else "Introduce conclusions with context and alternatives.")
+    measured = ", ".join(direction_labels) or "still-emerging"
+    strengths = [str(item) for item in signals.get("strengths", [])[:6]]
+    if not strengths:
+        strengths = [f"Consistent {label} communication signal." for label in direction_labels[:3]]
+    return {
+        "persona_name": "Measured Communication Profile",
+        "tagline": f"Strongest current signals: {measured}.",
+        "summary": f"This profile is computed from {readiness.get('meaningful_messages', 0):,} meaningful messages using deterministic language and timing rules. Topics currently center on {top_topic}; results describe observed chat behavior, not a fixed personality.",
+        "archetypes": archetypes or [{"name": "Emerging signal", "description": "More interaction is needed before a directional pattern is stable."}],
+        "signature_style": f"A measured mix of {measured} communication.",
+        "how_to_work_with_me": list(dict.fromkeys(work_notes))[:6],
+        "strengths": strengths,
+        "growth_edges": [],
+        "image_prompt": "an abstract data constellation with connected communication signals, teal and graphite, no person or text",
+    }
+
+
 def _merge_user_preferences(profile: dict[str, Any], old_profile: dict[str, Any] | None) -> dict[str, Any]:
     old_profile = old_profile or {}
     profile["controls"] = {**DEFAULT_CONTROLS, **(old_profile.get("controls") or {})}
@@ -905,7 +1112,9 @@ def process_persona_run(run_id: str = "", worker_id: str = "persona-worker") -> 
         suppressed = (old_profile or {}).get("suppressed_source_ids", [])
         messages = collect_persona_messages(user_id, suppressed, run.get("source_cutoff"))
         readiness = readiness_from_messages(messages)
-        if not readiness["eligible"]:
+        import_collection = getattr(db, "persona_chat_imports", None)
+        imported_sources = list(import_collection.find({"user_id": user_id, "include_in_merged": True})) if import_collection is not None else []
+        if not readiness["eligible"] and not imported_sources:
             profile = _merge_user_preferences({
                 "user_id": user_id,
                 "status": "insufficient_data",
@@ -934,11 +1143,12 @@ def process_persona_run(run_id: str = "", worker_id: str = "persona-worker") -> 
         extractions: list[dict[str, Any]] = []
         for index, batch in enumerate(batches, start=1):
             progress = 12 + round(index / max(len(batches), 1) * 56)
-            _update_run(run_id, "analyzing", progress, f"Analyzing conversation evidence ({index}/{len(batches)}).", worker_id)
-            extractions.append(_extract_batch(batch))
+            _update_run(run_id, "analyzing", progress, f"Computing local conversation signals ({index}/{len(batches)}).", worker_id)
+            extractions.append(_local_extract_batch(batch))
 
         signals = _merge_extractions(extractions, meaningful)
-        narrative = _profile_narrative(signals, readiness)
+        signals = _merge_imported_signals(signals, imported_sources)
+        narrative = _local_profile_narrative(signals, readiness)
         profile = {
             "user_id": user_id,
             "status": "completed",
@@ -954,6 +1164,8 @@ def process_persona_run(run_id: str = "", worker_id: str = "persona-worker") -> 
                 "conversation_contexts": readiness["conversation_contexts"],
                 "shared_messages": readiness["shared_messages"],
                 "latest_message_at": max((_iso(item["created_at"]) for item in meaningful), default=None),
+                "merged_chat_imports": [str(item.get("id")) for item in imported_sources],
+                "analysis_mode": "local_only",
             },
         }
         profile = _merge_user_preferences(profile, old_profile)
@@ -966,7 +1178,7 @@ def process_persona_run(run_id: str = "", worker_id: str = "persona-worker") -> 
         if not _lease_active(run_id, worker_id):
             return True
         db.persona_profiles.update_one({"user_id": user_id}, {"$set": {"has_image": has_image, "updated_at": _now()}})
-        _finish_run(run_id, "completed", "Your persona dashboard is ready.", worker_id=worker_id, readiness=readiness, has_image=has_image)
+        _finish_run(run_id, "completed", "Your local-only persona dashboard is ready.", worker_id=worker_id, readiness=readiness, has_image=has_image, analysis_mode="local_only")
         return True
     except Exception as exc:
         logger.exception("Persona run %s failed", run_id)
@@ -1065,10 +1277,15 @@ def delete_persona(user_id: str) -> None:
     db.persona_profiles.delete_one({"user_id": user_id})
     db.persona_images.delete_one({"user_id": user_id})
     db.persona_simulations.delete_many({"user_id": user_id})
+    import_collection = getattr(db, "persona_chat_imports", None)
+    if import_collection is not None:
+        import_collection.delete_many({"user_id": user_id})
 
 
 @_translate_store_errors
 def simulate_twin(user_id: str, scenario: str) -> dict[str, Any]:
+    if get_config("PERSONA_LLM_FEATURES_ENABLED", "false").lower() != "true":
+        raise PermissionError("AI simulation is disabled in local-only Persona mode.")
     db = _db()
     profile = db.persona_profiles.find_one({"user_id": user_id})
     if not profile or profile.get("status") != "completed":

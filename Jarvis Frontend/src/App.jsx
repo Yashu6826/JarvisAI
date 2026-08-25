@@ -3,7 +3,7 @@ import { Check, CircleHelp, Command, Copy, Crown, FileText, Link2, LoaderCircle,
 import Particles, { ParticlesProvider } from '@tsparticles/react'
 import { loadSlim } from '@tsparticles/slim'
 import MarkdownResponse from './components/MarkdownResponse.jsx'
-import PersonaDashboard from './components/PersonaDashboard.jsx'
+import PersonaDashboard from './components/PersonaWorkspace.jsx'
 import './App.css'
 
 const starterMessages = [
@@ -651,19 +651,28 @@ const AnswerCards = memo(function AnswerCards({ message, sessionId }) {
   )
 })
 
-const AssistantResponseActions = memo(function AssistantResponseActions({ message, canSaveFeedback, onFeedback }) {
+const MessageCopyButton = memo(function MessageCopyButton({ text = '', label = 'message' }) {
   const [copied, setCopied] = useState(false)
-  const [busy, setBusy] = useState(false)
 
-  const copyResponse = async () => {
+  const copyMessage = async () => {
     try {
-      await navigator.clipboard.writeText(String(message.text || ''))
+      await navigator.clipboard.writeText(String(text || ''))
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1400)
     } catch {
       setCopied(false)
     }
   }
+
+  return (
+    <button type="button" onClick={copyMessage} aria-label={`Copy ${label}`} title={copied ? 'Copied' : `Copy ${label}`}>
+      {copied ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  )
+})
+
+const AssistantResponseActions = memo(function AssistantResponseActions({ message, canSaveFeedback, onFeedback }) {
+  const [busy, setBusy] = useState(false)
 
   const submitFeedback = async (reaction) => {
     if (!canSaveFeedback || busy || message.feedback === reaction) return
@@ -694,9 +703,7 @@ const AssistantResponseActions = memo(function AssistantResponseActions({ messag
         title="Dislike"
       ><ThumbsDown size={14} /></button>
       {/* <span aria-hidden="true" /> */}
-      <button type="button" onClick={copyResponse} aria-label="Copy response" title={copied ? 'Copied' : 'Copy response'}>
-        {copied ? <Check size={14} /> : <Copy size={14} />}
-      </button>
+      <MessageCopyButton text={message.text} label="response" />
     </div>
   )
 })
@@ -911,6 +918,7 @@ function App() {
   const [theme, setTheme] = useState(readThemePreference)
   const feedRef = useRef(null)
   const shouldStickToBottomRef = useRef(true)
+  const forceScrollToBottomRef = useRef(false)
   const scrollFrameRef = useRef(0)
   const composerInputRef = useRef(null)
   const sessionSocketRef = useRef(null)
@@ -932,6 +940,11 @@ function App() {
   }, [])
   const showAuth = useCallback(() => setAuthView(true), [])
 
+  const requestConversationBottomScroll = useCallback(() => {
+    forceScrollToBottomRef.current = true
+    shouldStickToBottomRef.current = true
+  }, [])
+
   const applyPendingEmail = useCallback((email) => {
     setPendingEmail(email || null)
     setPendingRecipient(email?.to?.join(', ') || '')
@@ -951,11 +964,12 @@ function App() {
     const response = await apiFetch(`${API_BASE}/api/chats`, { method: 'POST', credentials: 'include' })
     const data = await response.json()
     if (!response.ok) throw new Error(data.detail || 'Could not create a chat.')
+    requestConversationBottomScroll()
     setChatSessions((current) => [data.session, ...current])
     setActiveSessionId(data.session.id)
     setMessages(starterMessages)
     return data.session
-  }, [])
+  }, [requestConversationBottomScroll])
 
   const markSessionRead = useCallback(async (sessionId) => {
     const response = await apiFetch(`${API_BASE}/api/chats/${sessionId}/read`, {
@@ -976,6 +990,7 @@ function App() {
       error.status = response.status
       throw error
     }
+    requestConversationBottomScroll()
     setActiveSessionId(sessionId)
     setReplyTarget(null)
     const nextMessages = data.messages.length
@@ -983,7 +998,7 @@ function App() {
       : starterMessages
     setMessages((current) => areMessagesEquivalent(current, nextMessages) ? current : nextMessages)
     if (options.markRead !== false) markSessionRead(sessionId).catch(() => {})
-  }, [markSessionRead])
+  }, [markSessionRead, requestConversationBottomScroll])
 
   const openChatHome = useCallback(async () => {
     navigateTo('/')
@@ -1693,6 +1708,7 @@ function App() {
       setApiError('Deep research currently uses online sources. Remove the PDF or ask about it in a normal message.')
       return
     }
+    requestConversationBottomScroll()
     const createdAt = new Date().toISOString()
     setMessages((current) => [
       ...current,
@@ -1996,6 +2012,7 @@ function App() {
     announceTyping,
     navigateTo,
     personaRunBusy,
+    requestConversationBottomScroll,
   ])
 
   useEffect(() => {
@@ -2245,11 +2262,15 @@ function App() {
   useEffect(() => {
     if (currentPage !== 'chat') return undefined
     const feed = feedRef.current
-    if (!feed || !shouldStickToBottomRef.current) return undefined
+    if (!feed) return undefined
+    const shouldScrollToBottom = forceScrollToBottomRef.current || shouldStickToBottomRef.current
+    if (!shouldScrollToBottom) return undefined
     if (scrollFrameRef.current) window.cancelAnimationFrame(scrollFrameRef.current)
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = 0
       feed.scrollTop = feed.scrollHeight
+      forceScrollToBottomRef.current = false
+      shouldStickToBottomRef.current = true
     })
     return () => {
       if (scrollFrameRef.current) {
@@ -2257,7 +2278,7 @@ function App() {
         scrollFrameRef.current = 0
       }
     }
-  }, [currentPage, messages.length, isThinking, liveAnswer, thinkingStatus])
+  }, [activeSessionId, currentPage, messages.length, isThinking, liveAnswer, thinkingStatus])
 
   const activeSession = chatSessions.find((session) => session.id === activeSessionId)
   const sharedSessionActive = activeSessionIsShared

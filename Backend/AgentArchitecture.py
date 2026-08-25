@@ -1,14 +1,13 @@
 """Production primitives for Nexa's workflow-based agent runtime.
 
-This module deliberately keeps routing and context construction deterministic.
-An LLM may plan *inside* a selected workflow, but it never gets to grant itself
-new permissions or bypass the workflow policy.
+The semantic planner selects tools from a closed catalog. This module derives
+workflow metadata from that validated selection and keeps context/audit state
+deterministic; it does not classify natural-language requests with keywords.
 """
 
 from __future__ import annotations
 
 import json
-import re
 import threading
 from datetime import datetime, timezone
 from enum import Enum
@@ -19,9 +18,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from Backend.Chatbot import LoadHistory
-from Backend.GoogleOAuth import google_mcp_connected
 from Backend.MongoStore import current_chat_session_id, current_chat_user_id
-from Backend.OwnerRAG import is_owner_question
 from Backend.Paths import DATA_DIR
 from Backend.SessionContext import load_for_agent, prompt_block
 
@@ -69,144 +66,93 @@ class AgentRun(BaseModel):
     error: str = ""
 
 
-_ACTION_PATTERN = re.compile(
-    r"\b(?:send|draft|compose|schedule|create|update|delete|remove|cancel|reply|"
-    r"book|open|launch|close|mute|unmute|set|increase|decrease|upload|share)\b",
-    re.I,
-)
-_RESEARCH_PATTERN = re.compile(
-    r"\b(?:latest|current|today|news|research|compare|price|stock|weather|"
-    r"forecast|exchange rate|near me|directions?|find online|search(?: the)? web)\b",
-    re.I,
-)
-_LONG_RUNNING_PATTERN = re.compile(
-    r"\b(?:deep research|comprehensive research|monitor|every day|daily briefing|"
-    r"scan .*repository|analyse .*repository|large report)\b",
-    re.I,
-)
-_DEVICE_READ_PATTERN = re.compile(
-    r"\b(?:battery|wi-?fi|system specs?|laptop specs?|processor|ram|gpu|"
-    r"storage|windows version|power status|power and wifi status)\b",
-    re.I,
-)
+_WEB_TOOLS = {"research_web", "search_web", "read_webpage", "open_website"}
+_DEVICE_TOOLS = {
+    "open_application", "close_application", "control_volume",
+    "control_brightness", "get_system_specs", "get_power_and_wifi_status",
+    "create_document",
+}
+_LIVE_DATA_TOOLS = {
+    "maps_search_places", "maps_geocode", "maps_get_directions",
+    "get_weather_and_air_quality", "check_holiday_schedule", "convert_currency",
+}
+_ACTION_TOOLS = {
+    "open_website", "open_application", "close_application", "control_volume",
+    "control_brightness", "draft_email", "send_email", "create_document",
+}
+_CONFIRMATION_TOOLS = {"send_email"}
+_MUTATION_TOKENS = {
+    "send", "create", "update", "delete", "remove", "move", "archive",
+    "reply", "respond", "post", "write", "upload", "share", "schedule",
+}
 
 
-def _normalise(text: str) -> str:
-    return " ".join(text.lower().split())
+def _tool_domain(name: str) -> str:
+    if name.startswith("gmail_") or name in {"draft_email", "send_email"}:
+        return "gmail"
+    if name.startswith("google_drive_"):
+        return "drive"
+    if name.startswith("google_calendar_"):
+        return "calendar"
+    if name == "answer_owner_profile":
+        return "owner_profile"
+    if name in _WEB_TOOLS:
+        return "web"
+    if name in _DEVICE_TOOLS:
+        return "device"
+    if name in _LIVE_DATA_TOOLS:
+        return "live_data"
+    if name == "get_capabilities" or "_" not in name:
+        return ""
+    return name.split("_", 1)[0].strip().lower()
 
 
-def route_request(
-    query: str,
-    connected_plugin_domains: Iterable[str] = (),
-    session_context: dict[str, Any] | None = None,
-) -> RouteDecision:
-    """Choose a workflow using explicit, auditable rules.
+def _looks_mutating_tool(name: str) -> bool:
+    if name in _ACTION_TOOLS:
+        return True
+    return bool(_MUTATION_TOKENS & set(name.lower().split("_")))
 
-    Ambiguous requests intentionally go to the direct workflow. Its scoped
-    planner can still request bounded web research where appropriate; this
-    avoids confidently routing a vague request to a private connector.
+
+def route_from_plan(plan: dict[str, Any]) -> RouteDecision:
+    """Derive audit/session metadata from a validated semantic tool plan.
+
+    Natural-language intent has already been decided by the planner. This
+    function examines only selected tool identities, never request wording.
     """
-    text = _normalise(query)
-    if _LONG_RUNNING_PATTERN.search(text):
-        return RouteDecision(
-            workflow=Workflow.LONG_RUNNING,
-            domains=["jobs"],
-            reason="The request describes work that can exceed an interactive run.",
-            confidence=0.92,
-        )
-
+    selected = [str(item) for item in plan.get("tool_names") or [] if str(item)]
     domains: list[str] = []
-    if re.search(r"\b(?:gmail|e-?mails?|inbox|unread|message from)\b", text):
-        domains.append("gmail")
-    if re.search(r"\b(?:google drive|my drive|drive file|google doc|google sheet|google slide)\b", text):
-        domains.append("drive")
-    if re.search(r"\b(?:calendars?|meetings?|appointments?|events?|availability|free time|busy)\b", text):
-        domains.append("calendar")
-    for domain in connected_plugin_domains:
-        normalized_domain = _normalise(domain).replace(" ", "_")
-        phrase = normalized_domain.replace("_", " ")
-        if phrase and re.search(rf"\b{re.escape(phrase)}\b", text):
-            domains.append(normalized_domain)
-    if is_owner_question(text):
-        return RouteDecision(
-            workflow=Workflow.KNOWLEDGE,
-            domains=["owner_profile"],
-            reason="The request targets Nexa's private owner-profile knowledge.",
-            confidence=0.93,
-        )
+    for name in selected:
+        domain = _tool_domain(name)
+        if domain and domain not in domains:
+            domains.append(domain)
 
-    action = bool(_ACTION_PATTERN.search(text))
-    if domains:
-        return RouteDecision(
-            workflow=Workflow.ACTION if action else Workflow.PERSONAL_APP,
-            domains=domains,
-            reason="The request explicitly names a connected personal application.",
-            requires_confirmation=action,
-            confidence=0.95,
-        )
-    if action and re.search(r"\b(?:app|application|volume|brightness|screen|document|file)\b", text):
-        return RouteDecision(
-            workflow=Workflow.ACTION,
-            domains=["device"],
-            reason="The request explicitly asks Nexa to change local or external state.",
-            requires_confirmation=True,
-            confidence=0.9,
-        )
-    if _DEVICE_READ_PATTERN.search(text):
-        return RouteDecision(
-            workflow=Workflow.DIRECT,
-            domains=["device"],
-            reason="The request asks for read-only information about this computer.",
-            confidence=0.9,
-        )
-    if _RESEARCH_PATTERN.search(text):
-        return RouteDecision(
-            workflow=Workflow.RESEARCH,
-            domains=["web"],
-            reason="The request likely needs current or externally verified information.",
-            confidence=0.82,
-        )
-    # Continue the previous workflow only for an explicitly referential
-    # follow-up.  The session context is a routing hint; the planner still
-    # receives the full bounded transcript and must validate the final plan.
-    if session_context and re.search(
-        r"\b(?:it|its|this|that|these|those|them|the first|the second|the last|"
-        r"which one|what about|how about|compare|continue|again|also|earlier|previously)\b",
-        text,
-        re.I,
+    has_action = any(_looks_mutating_tool(name) for name in selected)
+    if has_action:
+        workflow = Workflow.ACTION
+    elif "answer_owner_profile" in selected and set(selected) <= {
+        "answer_owner_profile", "get_capabilities"
+    }:
+        workflow = Workflow.KNOWLEDGE
+    elif any(
+        domain not in {"web", "device", "live_data", "owner_profile"}
+        for domain in domains
     ):
-        prior_workflow = str(session_context.get("last_workflow") or "")
-        try:
-            prior = Workflow(prior_workflow)
-        except ValueError:
-            prior = Workflow.DIRECT
-        if prior == Workflow.RESEARCH:
-            return RouteDecision(
-                workflow=Workflow.RESEARCH,
-                domains=list(session_context.get("last_domains") or ["web"]),
-                reason="The request is an ambiguous follow-up to the session's research workflow.",
-                confidence=0.68,
-            )
-        if prior == Workflow.PERSONAL_APP:
-            domains = list(session_context.get("last_domains") or [])
-            if domains:
-                return RouteDecision(
-                    workflow=Workflow.PERSONAL_APP,
-                    domains=domains,
-                    reason="The request continues the session's connected-app conversation.",
-                    confidence=0.68,
-                )
-        if prior == Workflow.KNOWLEDGE:
-            return RouteDecision(
-                workflow=Workflow.KNOWLEDGE,
-                domains=list(session_context.get("last_domains") or ["owner_profile"]),
-                reason="The request continues the session's private knowledge conversation.",
-                confidence=0.68,
-            )
+        workflow = Workflow.PERSONAL_APP
+    elif "web" in domains:
+        workflow = Workflow.RESEARCH
+    else:
+        workflow = Workflow.DIRECT
+
     return RouteDecision(
-        workflow=Workflow.DIRECT,
-        reason="The request can be answered without selecting a private or mutating domain.",
-        confidence=0.7,
+        workflow=workflow,
+        domains=domains,
+        reason="Derived from the semantic planner's validated tool selection.",
+        requires_confirmation=any(
+            name in _CONFIRMATION_TOOLS
+            or (_looks_mutating_tool(name) and name not in _ACTION_TOOLS)
+            for name in selected
+        ),
+        confidence=0.9,
     )
 
 
@@ -249,87 +195,6 @@ def build_context(max_messages: int = 10, max_chars: int = 3_000) -> AgentContex
         session_id=current_chat_session_id(),
         user_id=current_chat_user_id(),
     )
-
-
-def connected_plugin_domains(tools: Iterable[Any]) -> set[str]:
-    """Discover active MCP plugin prefixes without hard-coding integrations."""
-    built_in_prefixes = {
-        "gmail", "google", "maps", "get", "check", "convert", "draft",
-        "send", "create", "open", "close", "control", "read", "search",
-        "research", "answer",
-    }
-    domains: set[str] = set()
-    for tool in tools:
-        name = str(getattr(tool, "name", "") or "")
-        if "_" not in name:
-            continue
-        prefix = name.split("_", 1)[0].strip().lower()
-        if prefix and prefix not in built_in_prefixes:
-            domains.add(prefix)
-    return domains
-
-
-def tools_for_workflow(decision: RouteDecision, tools: Iterable[Any]) -> list[Any]:
-    """Apply a deny-by-default tool boundary before the planner sees tools."""
-    tools_by_name = {
-        str(getattr(tool, "name", "") or ""): tool for tool in tools
-        if str(getattr(tool, "name", "") or "")
-    }
-    names: set[str] = {"get_capabilities"}
-    google_domains = {
-        "gmail": "gmail",
-        "drive": "google_drive",
-        "calendar": "google_calendar",
-    }
-
-    def connected(domain: str) -> bool:
-        service = google_domains.get(domain)
-        return not service or google_mcp_connected(service)
-
-    def connector_tools(prefix: str, *, allow_mutations: bool) -> set[str]:
-        mutation_markers = (
-            "create", "update", "delete", "remove", "send", "reply", "respond",
-            "archive", "trash", "upload", "move", "copy", "share", "label",
-        )
-        names = {name for name in tools_by_name if name.startswith(prefix)}
-        if allow_mutations:
-            return names
-        return {
-            name for name in names
-            if not any(marker in name.removeprefix(prefix).lower().split("_") for marker in mutation_markers)
-        }
-    if decision.workflow in {Workflow.DIRECT, Workflow.RESEARCH, Workflow.LONG_RUNNING}:
-        names.update({
-            "research_web", "search_web", "read_webpage", "open_website",
-            "maps_search_places", "maps_geocode", "maps_get_directions",
-            "get_weather_and_air_quality", "check_holiday_schedule", "convert_currency",
-        })
-    elif decision.workflow == Workflow.KNOWLEDGE:
-        names.add("answer_owner_profile")
-    elif decision.workflow == Workflow.PERSONAL_APP:
-        for domain in decision.domains:
-            if not connected(domain):
-                continue
-            prefixes = {"drive": "google_drive_", "calendar": "google_calendar_"}
-            prefix = prefixes.get(domain, f"{domain}_")
-            names.update(connector_tools(prefix, allow_mutations=False))
-    elif decision.workflow == Workflow.ACTION:
-        names.update({
-            "draft_email", "create_document", "open_application",
-            "close_application", "control_volume", "control_brightness",
-            "get_system_specs", "get_power_and_wifi_status",
-        })
-        if google_mcp_connected("gmail"):
-            names.add("send_email")
-        for domain in decision.domains:
-            if not connected(domain):
-                continue
-            prefixes = {"drive": "google_drive_", "calendar": "google_calendar_"}
-            prefix = prefixes.get(domain, f"{domain}_")
-            names.update(name for name in tools_by_name if name.startswith(prefix))
-    if "device" in decision.domains:
-        names.update({"get_system_specs", "get_power_and_wifi_status"})
-    return [tool for name, tool in tools_by_name.items() if name in names]
 
 
 class AgentRunStore:

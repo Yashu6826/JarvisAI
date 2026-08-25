@@ -71,6 +71,15 @@ class PersonaAPITests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         delete.assert_called_once_with("user-a")
 
+    def test_selecting_import_source_does_not_queue_persona_run(self) -> None:
+        imported = {"id": "import-a", "include_in_merged": True}
+        with TestClient(app) as browser, patch("Backend.WebApp._authenticated_user", return_value=USER), patch("Backend.WebApp.update_chat_import", return_value=imported) as update, patch("Backend.WebApp.queue_persona_run") as queue:
+            response = browser.patch("/api/persona/chat-imports/import-a", json={"include_in_merged": True})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["chat_import"], imported)
+        update.assert_called_once_with("user-a", "import-a", True)
+        queue.assert_not_called()
+
     def test_command_grammar_is_exact(self) -> None:
         from Backend.WebApp import _is_persona_command
 

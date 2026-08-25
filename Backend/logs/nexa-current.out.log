@@ -1,24 +1,121 @@
-INFO:     127.0.0.1:59282 - "GET /api/health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59345 - "POST /api/chat HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57676 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57676 - "GET /assets/index-CL0-dPHS.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50771 - "GET /assets/index-B1nrHNUB.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50771 - "GET /api/todos HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50771 - "GET /api/email/pending HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65215 - "GET /api/history HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65215 - "GET /api/mcp/pending HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50771 - "GET /api/mcp/servers HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50771 - "GET /api/capabilities HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50771 - "GET /favicon.ico HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65215 - "GET /api/google/status HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57676 - "GET /api/health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57676 - "POST /api/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57676 - "GET /api/todos HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61574 - "POST /api/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61574 - "GET /api/todos HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59113 - "POST /api/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59113 - "GET /api/todos HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55335 - "POST /api/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55335 - "GET /api/todos HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54620 - "POST /api/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54620 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59389 - "OPTIONS /api/chats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50332 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64646 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:53909 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:54536 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:65081 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:57487 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:52372 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:52795 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:60169 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64359 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:60351 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:56579 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:60264 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:58044 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:62211 - "OPTIONS /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55586 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:63401 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:62926 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:60833 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:50403 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:62144 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:62447 - "GET /api/chats HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:51258 - "GET /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:63504 - "OPTIONS /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63259 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62493 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50461 - "GET /api/auth/me HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:59653 - "OPTIONS /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49889 - "OPTIONS /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65427 - "OPTIONS /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59768 - "OPTIONS /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59737 - "OPTIONS /api/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56898 - "OPTIONS /api/capabilities HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60800 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53337 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65091 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50461 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53708 - "GET /api/auth/me HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:54322 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61531 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60657 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49344 - "GET /api/google/status HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:53708 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60800 - "GET /api/capabilities HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:60800 - "GET /api/capabilities HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:49344 - "GET /api/google/status HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:56037 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52997 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63927 - "GET /api/auth/me HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:53840 - "OPTIONS /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51044 - "OPTIONS /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53341 - "OPTIONS /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63710 - "OPTIONS /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49843 - "OPTIONS /api/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "OPTIONS /api/capabilities HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63038 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57474 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56077 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63927 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61740 - "GET /api/auth/me HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:52368 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51089 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57614 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51562 - "GET /api/google/status HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:63038 - "GET /api/capabilities HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:61740 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63038 - "GET /api/capabilities HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:57614 - "GET /api/google/status HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:63725 - "GET /api/auth/me HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:53505 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51858 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53688 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63508 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63725 - "GET /api/auth/me HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:57896 - "GET /api/google/status HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:51812 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61068 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53505 - "GET /api/capabilities HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:61299 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63725 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57896 - "GET /api/google/status HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:53505 - "GET /api/capabilities HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:62835 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62869 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60765 - "GET /api/auth/me HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:59759 - "OPTIONS /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56324 - "OPTIONS /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63159 - "OPTIONS /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52289 - "OPTIONS /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49700 - "OPTIONS /api/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55641 - "OPTIONS /api/capabilities HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54359 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58141 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53081 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60765 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49361 - "GET /api/auth/me HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:49798 - "GET /api/auth/me HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:49798 - "GET /api/capabilities HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:64903 - "GET /api/google/status HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55396 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63335 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56433 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49798 - "GET /api/capabilities HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:64903 - "GET /api/google/status HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55396 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63335 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56433 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49361 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56433 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52748 - "GET /api/auth/me HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:65048 - "GET /api/email/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61069 - "GET /api/mcp/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60746 - "GET /api/mcp/servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51690 - "GET /api/google/status HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:54359 - "GET /api/capabilities HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:52748 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54887 - "GET /api/auth/google HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:54887 - "GET /favicon.ico HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51690 - "GET /api/google/status HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:54359 - "GET /api/capabilities HTTP/1.1" 503 Service Unavailable

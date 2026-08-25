@@ -115,7 +115,12 @@ def SaveExchange(
             try:
                 from Backend.SessionContext import refresh as refresh_session_context
 
-                refresh_session_context()
+                refresh_session_context(
+                    query=query,
+                    answer=answer,
+                    answer_visibility=answer_visibility,
+                    answer_visible_to_user_id=answer_visible_to_user_id,
+                )
             except Exception:
                 pass
             return saved

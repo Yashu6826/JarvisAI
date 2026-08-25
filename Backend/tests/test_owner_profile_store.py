@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
-from Backend.AgentArchitecture import Workflow, route_request
 from Backend.JarvisAgent import _perceive_request_impl
 import Backend.OwnerRAG as owner_rag
 
@@ -22,15 +22,22 @@ class OwnerProfileStoreTests(TestCase):
             "Who is your master?",
         ):
             self.assertTrue(owner_rag.is_owner_question(query), query)
-            self.assertEqual(route_request(query).workflow, Workflow.KNOWLEDGE, query)
 
-    def test_owner_plan_is_deterministic_and_uses_only_resume_tool(self) -> None:
-        plan = asyncio.run(
-            _perceive_request_impl(
-                "Who is your master?",
-                [FakeTool("get_capabilities"), FakeTool("answer_owner_profile")],
+    def test_semantic_owner_plan_uses_only_resume_tool(self) -> None:
+        response = json.dumps({
+            "intent": "answer from owner profile",
+            "needs_tools": True,
+            "tool_names": ["answer_owner_profile"],
+            "workflow": ["Retrieve the configured owner profile and cite it."],
+            "max_tool_calls": 1,
+        })
+        with patch("Backend.JarvisAgent.generate_text", return_value=response):
+            plan = asyncio.run(
+                _perceive_request_impl(
+                    "Who is your master?",
+                    [FakeTool("get_capabilities"), FakeTool("answer_owner_profile")],
+                )
             )
-        )
         self.assertTrue(plan["needs_tools"])
         self.assertEqual(plan["tool_names"], ["answer_owner_profile"])
         self.assertEqual(plan["max_tool_calls"], 1)
@@ -93,4 +100,3 @@ class OwnerProfileStoreTests(TestCase):
 
         self.assertEqual(result["retrieval_mode"], "local_lexical_fallback")
         self.assertEqual(result["matches"][0]["id"], "profile")
-

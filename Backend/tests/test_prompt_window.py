@@ -48,6 +48,35 @@ class PromptWindowTests(unittest.TestCase):
         }
         self.assertIn("not available", _plan_validation_error(plan, ["research_web"]))
 
+    def test_plan_validation_rejects_tools_when_needs_tools_is_false(self) -> None:
+        plan = {
+            "intent": "inconsistent",
+            "needs_tools": False,
+            "tool_names": ["research_web"],
+            "workflow": ["research"],
+            "max_tool_calls": 1,
+        }
+        self.assertIn(
+            "needs_tools is false",
+            _plan_validation_error(plan, ["research_web"]),
+        )
+
+    def test_plan_validation_requires_enough_calls_for_selected_tools(self) -> None:
+        plan = {
+            "intent": "two tools",
+            "needs_tools": True,
+            "tool_names": ["maps_geocode", "get_weather_and_air_quality"],
+            "workflow": ["geocode", "check weather"],
+            "max_tool_calls": 1,
+        }
+        self.assertIn(
+            "selected tool count",
+            _plan_validation_error(
+                plan,
+                ["maps_geocode", "get_weather_and_air_quality"],
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

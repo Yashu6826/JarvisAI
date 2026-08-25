@@ -1,4 +1,50 @@
-INFO:     Started server process [27684]
+INFO:     Started server process [26900]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:64416 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:64117 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:51701 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:51286 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:54631 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:57077 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:59045 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:56834 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:59622 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:62367 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:50558 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:59405 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:61561 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:63238 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     127.0.0.1:61055 - "WebSocket /api/chats/6cda13ae-a13e-4a5d-9bd9-c74558397e93/live?auth_token=vdLNWn4M1edYubQVk7hkvHq7996bU6N9fQBfTRoBllttsi2RAm4D2fafyB25jvuw" 403
+INFO:     connection rejected (403 Forbidden)
+Exception in callback _ProactorBasePipeTransport._call_connection_lost(None)
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost(None)>
+Traceback (most recent call last):
+  File "C:\Users\Gupta\AppData\Local\Programs\Python\Python310\lib\asyncio\events.py", line 80, in _run
+    self._context.run(self._callback, *self._args)
+  File "C:\Users\Gupta\AppData\Local\Programs\Python\Python310\lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+Exception in callback _ProactorBasePipeTransport._call_connection_lost(None)
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost(None)>
+Traceback (most recent call last):
+  File "C:\Users\Gupta\AppData\Local\Programs\Python\Python310\lib\asyncio\events.py", line 80, in _run
+    self._context.run(self._callback, *self._args)
+  File "C:\Users\Gupta\AppData\Local\Programs\Python\Python310\lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host

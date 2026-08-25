@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft, BrainCircuit, Check, ChevronRight, CircleGauge, Eye, EyeOff,
-  Fingerprint, FlaskConical, LoaderCircle, LockKeyhole, MessageSquareText,
+  Activity, ArrowLeft, BarChart3, BrainCircuit, Check, ChevronRight, CircleGauge, Clock3, Eye, EyeOff,
+  Fingerprint, FileUp, FlaskConical, LoaderCircle, LockKeyhole, MessageSquareText, Network, Target,
   RefreshCw, Save, ShieldCheck, Sparkles, Trash2, Users,
 } from 'lucide-react'
 import './PersonaDashboard.css'
@@ -9,7 +9,6 @@ import './PersonaDashboard.css'
 const tabs = [
   ['overview', 'Overview'],
   ['signals', 'Signals'],
-  ['twin', 'Twin lab'],
   ['controls', 'Controls'],
   ['evidence', 'Evidence'],
 ]
@@ -89,6 +88,113 @@ function ProcessingBanner({ run, onRefresh, refreshing }) {
   )
 }
 
+function ChatProfileDetail({ analysis }) {
+  const ai = analysis.ai || {}
+  return (
+    <div className="persona-chat-detail">
+      <div className="persona-chat-detail-note">AI-analyzed context profile · This reflects this conversation only, not your universal persona.</div>
+      <div className="persona-chat-hero"><div><span className="persona-eyebrow"><Sparkles size={13} /> {ai.status === 'fallback' ? 'Evidence profile' : 'AI conversation profile'}</span><h2>{ai.persona_name || 'Conversation profile'}</h2><strong>{ai.tagline || 'A context-specific communication pattern'}</strong><p>{ai.summary}</p></div><div className="persona-chat-signature"><small>Signature style</small><span>{ai.signature_style || 'Contextual and relationship-shaped.'}</span></div></div>
+      <div className="persona-chat-metrics">
+        <div><strong>{Number(analysis.message_count || 0).toLocaleString()}</strong><span>messages</span></div>
+        <div><strong>{Number(analysis.word_count || 0).toLocaleString()}</strong><span>words</span></div>
+        <div><strong>{analysis.average_message_words || 0}</strong><span>words / message</span></div>
+        <div><strong>{analysis.participant_count || 0}</strong><span>participants</span></div>
+      </div>
+      <div className="persona-chat-detail-grid">
+        <section><h4>Communication dimensions</h4>{(analysis.dimensions || []).map((item) => <div className="persona-chat-dimension" key={item.key}><div><span>{item.label}</span><small>{item.low_label} · {item.high_label}</small></div><div className="persona-dimension-track"><i style={{ width: `${item.score}%` }} /></div><strong>{item.score}</strong></div>)}<h4 className="persona-detail-subhead">Archetypes</h4>{(ai.archetypes || []).map((item) => <div className="persona-chat-observation" key={item.name}><strong>{item.name}</strong><p>{item.description}</p></div>)}</section>
+        <section><h4>Conversation topics</h4><div className="persona-topic-cloud">{(analysis.topics || []).map((item) => <span key={item.name} style={{ '--topic-score': item.score }}>{item.name}<small>{item.score}</small></span>)}</div><h4 className="persona-detail-subhead">Observed patterns</h4>{(analysis.observations || []).map((item) => <div className="persona-chat-observation" key={item.title}><strong>{item.title}</strong><p>{item.description}</p></div>)}</section>
+      </div>
+      <div className="persona-chat-ai-columns"><section><h4>Strength signals</h4><ul>{(ai.strengths || []).map((item) => <li key={item}>{item}</li>)}</ul></section><section><h4>How to work with me here</h4><ul>{(ai.how_to_work_with_me || []).map((item) => <li key={item}>{item}</li>)}</ul></section>{ai.decision_patterns?.length > 0 && <section><h4>Decision patterns</h4><ul>{ai.decision_patterns.map((item) => <li key={item}>{item}</li>)}</ul></section>}</div>
+      <div className="persona-chat-hours"><h4>Most active hours</h4>{(analysis.active_hours || []).map((item) => <span key={item.hour}>{String(item.hour).padStart(2, '0')}:00 <small>{item.count}</small></span>)}</div>
+    </div>
+  )
+}
+
+// Kept temporarily for compatibility with old hot-reloaded component state.
+// eslint-disable-next-line no-unused-vars
+function LegacyImportedChatPanel({ imports, busy, onUpload, onToggle, onDelete }) {
+  const [expandedImportId, setExpandedImportId] = useState(null)
+  return (
+    <section className="persona-panel persona-imports">
+      <div className="persona-panel-title"><MessageSquareText size={18} /><div><span>Conversation profiles</span><small>Each chat gets its own context. Nothing joins your merged persona without approval.</small></div></div>
+      <label className="persona-upload"><FileUp size={18} /><span>{busy ? 'Parsing and analyzing conversation…' : 'Upload WhatsApp or Telegram export'}<small>WhatsApp .zip/.txt or Telegram .json · media files are ignored</small></span><input type="file" accept=".zip,.txt,.json,application/zip,text/plain,application/json" onChange={onUpload} disabled={busy} /></label>
+      {!imports.length && <div className="persona-import-empty">No imported conversations yet.</div>}
+      <div className="persona-import-list">
+        {imports.map((item) => {
+          const analysis = item.analysis || {}
+          const expanded = expandedImportId === item.id
+          return <article key={item.id} className={expanded ? 'expanded' : ''} onClick={() => setExpandedImportId(expanded ? null : item.id)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setExpandedImportId(expanded ? null : item.id) }}>
+            <div><strong>{analysis.name || item.filename}</strong><small>{analysis.format} · {Number(analysis.message_count || 0).toLocaleString()} messages · {Number(analysis.word_count || 0).toLocaleString()} words</small></div>
+            <div className="persona-import-actions"><label onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={Boolean(item.include_in_merged)} onChange={(event) => onToggle(item, event.target.checked)} /> Include in merged persona</label><button type="button" onClick={(event) => { event.stopPropagation(); onDelete(item) }} title="Delete imported chat"><Trash2 size={15} /></button></div>
+            <div className="persona-import-signals">{(analysis.observations || []).slice(0, 3).map((signal) => <span key={signal.title}>{signal.title}</span>)}</div>
+            {expanded && <ChatProfileDetail analysis={analysis} />}
+          </article>
+        })}
+      </div>
+    </section>
+  )
+}
+
+function LocalSignalBar({ label, value, detail = '' }) {
+  return <div className="local-signal-bar"><div><span>{label}</span><strong>{value || 0}%</strong></div><div><i style={{ width: `${Math.max(0, Math.min(100, value || 0))}%` }} /></div>{detail && <small>{detail}</small>}</div>
+}
+
+function LocalDashboardBand({ icon, title, subtitle, children }) {
+  return <section className="local-dashboard-band"><header>{icon}<strong>{title}</strong><small>{subtitle}</small><i /></header><div className="local-dashboard-grid">{children}</div></section>
+}
+
+function LocalActivityHeatmap({ rows = [] }) {
+  const maximum = Math.max(1, ...rows.flatMap((row) => row.hours || []))
+  return <div className="local-heatmap">{rows.map((row) => <div key={row.day}><span>{row.day}</span><div>{(row.hours || []).map((count, hour) => <i key={hour} title={`${row.day} ${String(hour).padStart(2, '0')}:00 · ${count} messages`} style={{ opacity: 0.12 + (count / maximum) * 0.88 }} />)}</div></div>)}<footer><span>00h</span><span>06h</span><span>12h</span><span>18h</span><span>23h</span></footer></div>
+}
+
+function LocalChatDashboard({ analysis }) {
+  const behavior = analysis.behavior || {}
+  const tone = behavior.tone || {}
+  const attention = behavior.attention || {}
+  const decision = behavior.decision_style || {}
+  const profile = analysis.profile || {}
+  return <div className="persona-local-dashboard">
+    <header className="local-dashboard-head">
+      <div><span className="persona-eyebrow"><Fingerprint size={13} /> Local behavioral analysis</span><h2>{analysis.name || 'Conversation dashboard'}</h2><p>{profile.summary || 'Re-upload this conversation to generate the expanded local analytics.'}</p></div>
+      <div className="local-dashboard-stats"><div><small>Messages</small><strong>{Number(analysis.message_count || 0).toLocaleString()}</strong></div><div><small>Words</small><strong>{Number(analysis.word_count || 0).toLocaleString()}</strong></div><div><small>Median reply</small><strong>{behavior.median_reply_minutes == null ? '—' : `${behavior.median_reply_minutes}m`}</strong></div><div><small>Method</small><strong>Local only</strong></div></div>
+    </header>
+
+    <LocalDashboardBand icon={<CircleGauge size={17} />} title="Communication profile" subtitle="message structure and language markers">
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Behavior dimensions</strong><small>{analysis.message_count || 0} messages</small></div>{(analysis.dimensions || []).map((item) => <LocalSignalBar key={item.key} label={item.label} value={item.score} detail={`${item.low_label} ↔ ${item.high_label}`} />)}</article>
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Tone markers</strong><small>dictionary based</small></div><LocalSignalBar label="Positive language" value={tone.positive} /><LocalSignalBar label="Curiosity" value={tone.curiosity} /><LocalSignalBar label="Supportive language" value={tone.supportive_language} /><LocalSignalBar label="Negative language" value={tone.negative} /></article>
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Participant balance</strong><small>{analysis.participant_count || 0} participants</small></div><div className="local-participants">{(analysis.participants || []).map((item) => <div key={item.name}><span>{item.name}</span><div><i style={{ width: `${item.share}%` }} /></div><strong>{item.share}%</strong><small>{Number(item.messages).toLocaleString()} msgs</small></div>)}</div></article>
+    </LocalDashboardBand>
+
+    <LocalDashboardBand icon={<Network size={17} />} title="Knowledge and context" subtitle="topics, preferences, and explicit plans">
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Topic network</strong><small>{analysis.topic_graph?.nodes?.length || 0} clusters</small></div><div className="local-topic-nodes">{(analysis.topic_graph?.nodes || []).map((node) => <span key={node.id} style={{ '--weight': node.weight }}>{node.label}<small>{node.weight}</small></span>)}</div><div className="local-topic-edges">{(analysis.topic_graph?.edges || []).slice(0, 6).map((edge) => <span key={`${edge.source}-${edge.target}`}>{edge.source} <i>↔</i> {edge.target}<small>{edge.weight}</small></span>)}</div></article>
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Preference-like statements</strong><small>explicit wording only</small></div><div className="local-statement-list">{(analysis.preference_statements || []).map((item, index) => <blockquote key={`${item.author}-${index}`}><p>{item.text}</p><small>{item.author}</small></blockquote>)}{!analysis.preference_statements?.length && <p className="local-empty">No explicit preference phrases detected.</p>}</div></article>
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Goals and action language</strong><small>not inferred</small></div><div className="local-statement-list">{(analysis.goal_statements || []).map((item, index) => <blockquote key={`${item.author}-${index}`}><p>{item.text}</p><small>{item.author}</small></blockquote>)}{!analysis.goal_statements?.length && <p className="local-empty">No explicit goal phrases detected.</p>}</div></article>
+    </LocalDashboardBand>
+
+    <LocalDashboardBand icon={<Activity size={17} />} title="Behavioral patterns" subtitle="timing, attention, and decision language">
+      <article className="local-dashboard-panel local-wide"><div className="local-panel-title"><strong>Interaction heatmap</strong><small>day × hour</small></div><LocalActivityHeatmap rows={behavior.heatmap || []} /></article>
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Decision language</strong><small>{decision.reasoning_markers || 0} reasoning markers</small></div><LocalSignalBar label="Evidence-led" value={decision.evidence_led} /><LocalSignalBar label="Exploratory" value={decision.exploratory} /><div className="local-kpi"><small>Planning markers</small><strong>{decision.planning_markers || 0}</strong></div></article>
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Attention and engagement</strong><small>message-length signals</small></div><LocalSignalBar label="Deep messages" value={attention.deep_messages} /><LocalSignalBar label="Quick messages" value={attention.quick_messages} /><LocalSignalBar label="Question-led" value={attention.question_led} /></article>
+      <article className="local-dashboard-panel"><div className="local-panel-title"><strong>Conversation rhythm</strong><small>{behavior.reply_samples || 0} reply transitions</small></div><div className="local-rhythm"><div><Clock3 size={16} /><span>Median reply time</span><strong>{behavior.median_reply_minutes == null ? 'Not enough data' : `${behavior.median_reply_minutes} min`}</strong></div>{(behavior.initiations || []).map((item) => <div key={item.author}><Target size={16} /><span>{item.author}</span><strong>{item.count} starts</strong></div>)}</div></article>
+    </LocalDashboardBand>
+
+    <section className="local-method"><BarChart3 size={18} /><div><strong>How this dashboard is built</strong><p>{profile.method || 'Deterministic analysis only. No LLM, paid API, diagnosis, or hidden personality inference.'}</p></div></section>
+  </div>
+}
+
+function ImportedChatPanel({ imports, busy, onUpload, onToggle, onDelete }) {
+  const [selectedImportId, setSelectedImportId] = useState(null)
+  const selected = imports.find((item) => item.id === selectedImportId)
+  if (selected) return <LocalChatDashboard analysis={selected.analysis || {}} onBack={() => setSelectedImportId(null)} />
+  return <section className="persona-panel persona-imports">
+    <div className="persona-panel-title"><MessageSquareText size={18} /><div><span>Conversation profiles</span><small>Each chat stays contextual. Nothing joins the merged profile without approval.</small></div></div>
+    <label className="persona-upload"><FileUp size={18} /><span>{busy ? 'Computing local conversation signals…' : 'Upload WhatsApp or Telegram export'}<small>WhatsApp .zip/.txt or Telegram .json · no LLM or paid API</small></span><input type="file" accept=".zip,.txt,.json,application/zip,text/plain,application/json" onChange={onUpload} disabled={busy} /></label>
+    {!imports.length && <div className="persona-import-empty">No imported conversations yet.</div>}
+    <div className="persona-import-list">{imports.map((item) => { const analysis = item.analysis || {}; return <article key={item.id} onClick={() => setSelectedImportId(item.id)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') setSelectedImportId(item.id) }}><div><strong>{analysis.name || item.filename}</strong><small>{analysis.format} · {Number(analysis.message_count || 0).toLocaleString()} messages · {Number(analysis.word_count || 0).toLocaleString()} words</small></div><div className="persona-import-actions"><label onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={Boolean(item.include_in_merged)} onChange={(event) => onToggle(item, event.target.checked)} /> Include in merged profile</label><button type="button" onClick={(event) => { event.stopPropagation(); onDelete(item) }} title="Delete imported chat"><Trash2 size={15} /></button></div><div className="persona-import-signals">{(analysis.observations || []).slice(0, 3).map((signal) => <span key={signal.title}>{signal.title}</span>)}</div></article> })}</div>
+  </section>
+}
+
 export default function PersonaDashboard({ apiBase, fetchApi, user, onBack, onRequireAuth }) {
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading] = useState(Boolean(user))
@@ -103,6 +209,7 @@ export default function PersonaDashboard({ apiBase, fetchApi, user, onBack, onRe
   const [simulation, setSimulation] = useState(null)
   const [simulationBusy, setSimulationBusy] = useState(false)
   const [editingObservation, setEditingObservation] = useState(null)
+  const [importBusy, setImportBusy] = useState(false)
 
   const loadDashboard = useCallback(async ({ quiet = false } = {}) => {
     if (!user) return
@@ -127,6 +234,40 @@ export default function PersonaDashboard({ apiBase, fetchApi, user, onBack, onRe
       setRefreshing(false)
     }
   }, [apiBase, fetchApi, onRequireAuth, user])
+
+  const uploadChat = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setImportBusy(true)
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      const response = await fetchApi(`${apiBase}/api/persona/chat-imports`, { method: 'POST', credentials: 'include', body })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not read that chat export.')
+      await loadDashboard({ quiet: true })
+    } catch (requestError) { setError(requestError.message) } finally { setImportBusy(false) }
+  }
+
+  const toggleChatImport = async (item, include) => {
+    try {
+      const response = await fetchApi(`${apiBase}/api/persona/chat-imports/${encodeURIComponent(item.id)}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ include_in_merged: include }) })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not update the merged persona source.')
+      await loadDashboard({ quiet: true })
+    } catch (requestError) { setError(requestError.message) }
+  }
+
+  const deleteChatImport = async (item) => {
+    if (!window.confirm(`Delete ${item.filename || 'this imported conversation'}?`)) return
+    try {
+      const response = await fetchApi(`${apiBase}/api/persona/chat-imports/${encodeURIComponent(item.id)}`, { method: 'DELETE', credentials: 'include' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not delete this import.')
+      await loadDashboard({ quiet: true })
+    } catch (requestError) { setError(requestError.message) }
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadDashboard(), 0)
@@ -273,6 +414,7 @@ export default function PersonaDashboard({ apiBase, fetchApi, user, onBack, onRe
         </div>
 
         {error && <div className="persona-error">{error}</div>}
+        <ImportedChatPanel imports={dashboard?.chat_imports || []} busy={importBusy} onUpload={uploadChat} onToggle={toggleChatImport} onDelete={deleteChatImport} />
         <ProcessingBanner run={dashboard?.run} onRefresh={() => loadDashboard({ quiet: true })} refreshing={refreshing} />
         {runFailed && <div className="persona-error"><strong>The last analysis did not finish.</strong> Your previous snapshot was not changed. <button type="button" onClick={startRun}>Try again</button></div>}
 
